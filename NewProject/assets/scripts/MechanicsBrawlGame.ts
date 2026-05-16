@@ -1,8 +1,9 @@
-import { _decorator, AudioClip, AudioSource, Color, Component, EventMouse, Graphics, ImageAsset, input, Input, Label, Node, profiler, resources, Sprite, SpriteFrame, Texture2D, UITransform, Vec2, Vec3 } from 'cc';
+import { _decorator, AudioClip, AudioSource, Color, Component, EventMouse, Graphics, ImageAsset, input, Input, Label, Node, profiler, resources, Sprite, SpriteFrame, Texture2D, UITransform, Vec2, Vec3, view } from 'cc';
 
 const { ccclass } = _decorator;
 
 type GamePhase = 'start' | 'firstDice' | 'planning' | 'turnDice' | 'settling' | 'roundOver' | 'matchOver';
+type ClientLayoutMode = 'portrait' | 'landscape';
 type CardKind =
     | 'windField'
     | 'chargeField'
@@ -189,17 +190,20 @@ export class MechanicsBrawlGame extends Component {
     private currentBgm: AudioKey | null = null;
     private characterSpriteFrames: Array<SpriteFrame | null> = [null, null];
 
-    private readonly arenaM: RectLike = { x: -6, y: -3.4, w: 12, h: 6.8 };
-    private readonly pxPerM = 74;
+    private layoutMode: ClientLayoutMode = 'portrait';
+    private designW = 720;
+    private designH = 1280;
+    private arenaM: RectLike = { x: -5, y: -4.05, w: 10, h: 8.1 };
+    private pxPerM = 64;
     private readonly maxHandSize = 6;
     private readonly openingHandSize = 4;
     private readonly cardsDrawnPerTurn = 2;
     private readonly maxDiscardsPerTurn = 2;
     private readonly maxActionTurns = 30;
     private readonly wallUnitM = 0.4;
-    private readonly cardW = 112;
-    private readonly cardH = 70;
-    private readonly cardGap = 10;
+    private cardW = 104;
+    private cardH = 82;
+    private cardGap = 12;
     private readonly dragStartThreshold = 12;
     private readonly audioPaths: Record<AudioKey, string> = {
         start: 'audio/start',
@@ -213,11 +217,12 @@ export class MechanicsBrawlGame extends Component {
     onLoad() {
         this.node.removeAllChildren();
         this.canvas = this.node.getComponent(UITransform) || this.node.addComponent(UITransform);
-        this.canvas.setContentSize(1280, 720);
+        this.canvas.setContentSize(this.designW, this.designH);
         this.createCards();
         this.createLayers();
         this.createAudioSources();
         this.createLabels();
+        this.applyClientLayout(true);
         this.resetToStart();
         profiler.hideStats();
 
@@ -233,6 +238,7 @@ export class MechanicsBrawlGame extends Component {
     }
 
     update(deltaTime: number) {
+        this.applyClientLayout();
         const dt = Math.min(deltaTime, 1 / 20);
 
         if (this.phase === 'planning') {
@@ -254,13 +260,13 @@ export class MechanicsBrawlGame extends Component {
         const world = new Node('WorldCanvas');
         world.layer = this.node.layer;
         world.setParent(this.node);
-        world.addComponent(UITransform).setContentSize(1280, 720);
+        world.addComponent(UITransform).setContentSize(this.designW, this.designH);
         this.worldG = world.addComponent(Graphics);
 
         this.fighterLayer = new Node('FighterSprites');
         this.fighterLayer.layer = this.node.layer;
         this.fighterLayer.setParent(this.node);
-        this.fighterLayer.addComponent(UITransform).setContentSize(1280, 720);
+        this.fighterLayer.addComponent(UITransform).setContentSize(this.designW, this.designH);
         this.fighterSpriteNodes = [];
         this.fighterSprites = [];
         for (let i = 0; i < 2; i++) {
@@ -278,7 +284,7 @@ export class MechanicsBrawlGame extends Component {
         const hud = new Node('HudCanvas');
         hud.layer = this.node.layer;
         hud.setParent(this.node);
-        hud.addComponent(UITransform).setContentSize(1280, 720);
+        hud.addComponent(UITransform).setContentSize(this.designW, this.designH);
         this.hudG = hud.addComponent(Graphics);
     }
 
@@ -345,18 +351,18 @@ export class MechanicsBrawlGame extends Component {
     }
 
     private createLabels() {
-        this.makeLabel('title', 0, 328, 560, 34, 24, new Color(244, 247, 255, 255));
-        this.makeLabel('turn', -250, 292, 360, 30, 16, new Color(228, 239, 255, 255));
-        this.makeLabel('timer', 126, 292, 300, 30, 16, new Color(255, 226, 136, 255));
-        this.makeLabel('field', 0, 251, 900, 38, 13, new Color(189, 255, 218, 255));
-        this.makeLabel('message', 0, 270, 820, 30, 16, new Color(206, 226, 255, 255));
-        this.makeLabel('p0', -508, 205, 255, 96, 12, new Color(206, 233, 255, 255));
-        this.makeLabel('p1', 508, 205, 255, 96, 12, new Color(255, 218, 218, 255));
-        this.makeLabel('hint', 0, -214, 960, 24, 13, new Color(178, 190, 205, 255));
-        this.makeLabel('cardInfo', 0, -245, 1120, 54, 12, new Color(228, 236, 248, 255));
-        this.makeLabel('reset', 571, 311, 88, 28, 15, new Color(238, 244, 255, 255));
-        this.makeLabel('action', 571, 265, 88, 28, 15, new Color(238, 244, 255, 255));
-        this.makeLabel('discard', 457, 265, 88, 28, 15, new Color(238, 244, 255, 255));
+        this.makeLabel('title', 0, 612, 680, 34, 23, new Color(244, 247, 255, 255));
+        this.makeLabel('message', 0, 570, 680, 38, 15, new Color(206, 226, 255, 255));
+        this.makeLabel('turn', -178, 528, 332, 28, 14, new Color(228, 239, 255, 255));
+        this.makeLabel('timer', 178, 528, 332, 28, 14, new Color(255, 226, 136, 255));
+        this.makeLabel('field', 0, 470, 680, 54, 12, new Color(189, 255, 218, 255));
+        this.makeLabel('p0', -180, 377, 320, 116, 11, new Color(206, 233, 255, 255));
+        this.makeLabel('p1', 180, 377, 320, 116, 11, new Color(255, 218, 218, 255));
+        this.makeLabel('hint', 0, -294, 680, 28, 12, new Color(178, 190, 205, 255));
+        this.makeLabel('cardInfo', 0, -360, 680, 64, 12, new Color(228, 236, 248, 255));
+        this.makeLabel('reset', -290, 288, 90, 28, 14, new Color(238, 244, 255, 255));
+        this.makeLabel('discard', -175, 288, 100, 28, 14, new Color(238, 244, 255, 255));
+        this.makeLabel('action', 285, 288, 100, 28, 14, new Color(238, 244, 255, 255));
         this.makeLabel('name_0', 0, 0, 190, 22, 12, new Color(206, 233, 255, 255));
         this.makeLabel('name_1', 0, 0, 190, 22, 12, new Color(255, 218, 218, 255));
         this.makeLabel('configTitle', 0, 86, 420, 24, 16, new Color(248, 252, 255, 255));
@@ -394,6 +400,126 @@ export class MechanicsBrawlGame extends Component {
         (label as any).enableWrapText = true;
         this.labels[key] = label;
         return label;
+    }
+
+    private applyClientLayout(force = false) {
+        const visible = view.getVisibleSize();
+        const nextMode: ClientLayoutMode = visible.width >= visible.height ? 'landscape' : 'portrait';
+        if (!force && nextMode === this.layoutMode) {
+            return;
+        }
+
+        this.layoutMode = nextMode;
+        if (nextMode === 'landscape') {
+            this.designW = 1280;
+            this.designH = 720;
+            this.arenaM = { x: -6, y: -3.4, w: 12, h: 6.8 };
+            this.pxPerM = 74;
+            this.cardW = 112;
+            this.cardH = 70;
+            this.cardGap = 10;
+        } else {
+            this.designW = 720;
+            this.designH = 1280;
+            this.arenaM = { x: -5, y: -4.05, w: 10, h: 8.1 };
+            this.pxPerM = 64;
+            this.cardW = 104;
+            this.cardH = 82;
+            this.cardGap = 12;
+        }
+
+        this.resizeLayoutNodes();
+        this.applyLabelLayout();
+        this.clampFightersToArena();
+    }
+
+    private resizeLayoutNodes() {
+        const resize = (node: Node | undefined) => {
+            if (!node) {
+                return;
+            }
+            const transform = node.getComponent(UITransform);
+            if (transform) {
+                transform.setContentSize(this.designW, this.designH);
+            }
+        };
+
+        if (this.canvas) {
+            this.canvas.setContentSize(this.designW, this.designH);
+        }
+        resize(this.worldG?.node);
+        resize(this.fighterLayer);
+        resize(this.hudG?.node);
+    }
+
+    private applyLabelLayout() {
+        if (!this.labels.title) {
+            return;
+        }
+
+        if (this.layoutMode === 'landscape') {
+            this.setLabelBox('title', 0, 328, 560, 34, 24);
+            this.setLabelBox('turn', -250, 292, 360, 30, 16);
+            this.setLabelBox('timer', 126, 292, 300, 30, 16);
+            this.setLabelBox('field', 0, 251, 900, 38, 13);
+            this.setLabelBox('message', 0, 270, 820, 30, 16);
+            this.setLabelBox('p0', -508, 205, 255, 96, 12);
+            this.setLabelBox('p1', 508, 205, 255, 96, 12);
+            this.setLabelBox('hint', 0, -214, 960, 24, 13);
+            this.setLabelBox('cardInfo', 0, -245, 1120, 54, 12);
+        } else {
+            this.setLabelBox('title', 0, 612, 680, 34, 23);
+            this.setLabelBox('message', 0, 570, 680, 38, 15);
+            this.setLabelBox('turn', -178, 528, 332, 28, 14);
+            this.setLabelBox('timer', 178, 528, 332, 28, 14);
+            this.setLabelBox('field', 0, 470, 680, 54, 12);
+            this.setLabelBox('p0', -180, 377, 320, 116, 11);
+            this.setLabelBox('p1', 180, 377, 320, 116, 11);
+            this.setLabelBox('hint', 0, -294, 680, 28, 12);
+            this.setLabelBox('cardInfo', 0, -360, 680, 64, 12);
+        }
+
+        this.applyButtonLabelLayout();
+        for (let i = 0; i < this.cardLabels.length; i++) {
+            const r = this.cardRect(i);
+            this.setLabelBox(`card_${i}`, r.x + r.w / 2, r.y + r.h / 2 - 2, r.w - 6, r.h - 8, this.layoutMode === 'landscape' ? 13 : 12);
+        }
+    }
+
+    private applyButtonLabelLayout() {
+        this.setLabelToRect('reset', this.resetRect());
+        this.setLabelToRect('action', this.primaryRect());
+        this.setLabelToRect('discard', this.discardRect());
+    }
+
+    private setLabelToRect(key: string, rect: RectLike) {
+        this.setLabelBox(key, rect.x + rect.w / 2, rect.y + rect.h / 2, rect.w, rect.h);
+    }
+
+    private setLabelBox(key: string, x: number, y: number, w: number, h: number, size?: number) {
+        const label = this.labels[key];
+        if (!label) {
+            return;
+        }
+        label.node.setPosition(x, y, 0);
+        const transform = label.node.getComponent(UITransform);
+        if (transform) {
+            transform.setContentSize(w, h);
+        }
+        if (size !== undefined) {
+            label.fontSize = size;
+            label.lineHeight = Math.round(size * 1.18);
+        }
+    }
+
+    private clampFightersToArena() {
+        if (this.fighters.length === 0) {
+            return;
+        }
+        for (const fighter of this.fighters) {
+            fighter.posM.x = this.clamp(fighter.posM.x, this.arenaM.x + fighter.radiusM, this.arenaM.x + this.arenaM.w - fighter.radiusM);
+            fighter.posM.y = this.clamp(fighter.posM.y, this.arenaM.y + fighter.radiusM, this.arenaM.y + this.arenaM.h - fighter.radiusM);
+        }
     }
 
     private createCards() {
@@ -505,10 +631,11 @@ export class MechanicsBrawlGame extends Component {
     }
 
     private createInitialFighters() {
+        const offsetX = this.layoutMode === 'landscape' ? 4.6 : 3.8;
         this.fighters = [
             {
                 name: '艾萨克·牛顿',
-                posM: new Vec2(-4.6, 0),
+                posM: new Vec2(-offsetX, 0),
                 velMps: new Vec2(),
                 radiusM: 0.32,
                 baseMassKg: 2.4,
@@ -518,7 +645,7 @@ export class MechanicsBrawlGame extends Component {
             },
             {
                 name: '詹姆斯·麦克斯韦',
-                posM: new Vec2(4.6, 0),
+                posM: new Vec2(offsetX, 0),
                 velMps: new Vec2(),
                 radiusM: 0.30,
                 baseMassKg: 1.8,
@@ -532,10 +659,17 @@ export class MechanicsBrawlGame extends Component {
 
     private createInitialWalls() {
         this.walls = [];
-        this.addWall(-3.2, 0, 0.4, 2.0, -1, 5, 0, true, true);
-        this.addWall(3.2, 0, 0.4, 2.0, -1, 5, 0, true, true);
-        this.addWall(0, 1.9, 2.0, 0.4, -1, 5, 0, true, true);
-        this.addWall(0, -1.9, 2.0, 0.4, -1, 5, 0, true, true);
+        if (this.layoutMode === 'landscape') {
+            this.addWall(-3.2, 0, 0.4, 2.0, -1, 5, 0, true, true);
+            this.addWall(3.2, 0, 0.4, 2.0, -1, 5, 0, true, true);
+            this.addWall(0, 1.9, 2.0, 0.4, -1, 5, 0, true, true);
+            this.addWall(0, -1.9, 2.0, 0.4, -1, 5, 0, true, true);
+            return;
+        }
+        this.addWall(-2.8, 0, 0.4, 2.2, -1, 5, 0, true, true);
+        this.addWall(2.8, 0, 0.4, 2.2, -1, 5, 0, true, true);
+        this.addWall(0, 2.35, 2.4, 0.4, -1, 5, 0, true, true);
+        this.addWall(0, -2.35, 2.4, 0.4, -1, 5, 0, true, true);
     }
 
     private dealOpeningHands() {
@@ -1531,7 +1665,7 @@ export class MechanicsBrawlGame extends Component {
         const g = this.worldG;
         g.clear();
         g.fillColor = new Color(9, 13, 19, 255);
-        g.rect(-640, -360, 1280, 720);
+        g.rect(-this.designW / 2, -this.designH / 2, this.designW, this.designH);
         g.fill();
 
         if (this.phase === 'start') {
@@ -1568,11 +1702,13 @@ export class MechanicsBrawlGame extends Component {
 
     private drawStartWorld(g: Graphics) {
         g.fillColor = new Color(17, 23, 34, 255);
-        g.rect(-640, -360, 1280, 720);
+        g.rect(-this.designW / 2, -this.designH / 2, this.designW, this.designH);
         g.fill();
 
-        for (let y = -320; y <= 320; y += 32) {
-            for (let x = -600; x <= 600; x += 32) {
+        const halfW = this.designW / 2;
+        const halfH = this.designH / 2;
+        for (let y = -halfH + 32; y <= halfH - 32; y += 32) {
+            for (let x = -halfW + 32; x <= halfW - 32; x += 32) {
                 const on = ((x + y) / 32) % 2 === 0;
                 g.fillColor = on ? new Color(24, 36, 52, 255) : new Color(19, 28, 41, 255);
                 g.rect(x, y, 30, 30);
@@ -1580,13 +1716,18 @@ export class MechanicsBrawlGame extends Component {
             }
         }
 
+        const portrait = this.layoutMode === 'portrait';
+        const actorY = portrait ? 78 : 60;
+        const diceY = portrait ? 120 : 101;
+        const leftX = portrait ? -146 : -166;
+        const rightX = portrait ? 62 : 82;
         g.fillColor = new Color(75, 168, 255, 255);
-        g.rect(-166, 60, 84, 84);
+        g.rect(leftX, actorY, 84, 84);
         g.fill();
         g.fillColor = new Color(255, 92, 105, 255);
-        g.rect(82, 60, 84, 84);
+        g.rect(rightX, actorY, 84, 84);
         g.fill();
-        this.drawDiceFace(g, new Vec2(0, 101), this.dice || 1, 64);
+        this.drawDiceFace(g, new Vec2(0, diceY), this.dice || 1, 64);
         this.drawPrimaryButton(g);
     }
 
@@ -1845,18 +1986,32 @@ export class MechanicsBrawlGame extends Component {
     private drawHud() {
         const g = this.hudG;
         g.clear();
+        const portrait = this.layoutMode === 'portrait';
 
         g.fillColor = new Color(20, 27, 38, 238);
-        g.rect(-640, 250, 1280, 110);
+        if (portrait) {
+            g.rect(-this.designW / 2, 260, this.designW, 380);
+        } else {
+            g.rect(-this.designW / 2, 250, this.designW, 110);
+        }
         g.fill();
 
         g.fillColor = new Color(15, 22, 32, 242);
-        g.rect(-640, -360, 1280, 132);
+        if (portrait) {
+            g.rect(-this.designW / 2, -this.designH / 2, this.designW, 365);
+        } else {
+            g.rect(-this.designW / 2, -this.designH / 2, this.designW, 132);
+        }
         g.fill();
 
         if (this.phase !== 'start') {
-            this.drawPanel(g, -628, 156, 268, 104, new Color(24, 48, 75, 235), this.currentPlayer === 0 && this.phase === 'planning');
-            this.drawPanel(g, 360, 156, 268, 104, new Color(78, 31, 39, 235), this.currentPlayer === 1 && this.phase === 'planning');
+            if (portrait) {
+                this.drawPanel(g, -350, 316, 340, 122, new Color(24, 48, 75, 235), this.currentPlayer === 0 && this.phase === 'planning');
+                this.drawPanel(g, 10, 316, 340, 122, new Color(78, 31, 39, 235), this.currentPlayer === 1 && this.phase === 'planning');
+            } else {
+                this.drawPanel(g, -628, 156, 268, 104, new Color(24, 48, 75, 235), this.currentPlayer === 0 && this.phase === 'planning');
+                this.drawPanel(g, 360, 156, 268, 104, new Color(78, 31, 39, 235), this.currentPlayer === 1 && this.phase === 'planning');
+            }
         }
 
         this.drawButton(g, this.resetRect(), new Color(48, 60, 76, 255), true);
@@ -2035,8 +2190,9 @@ export class MechanicsBrawlGame extends Component {
         if (actionTransform) {
             actionTransform.setContentSize(primary.w, primary.h);
         }
+        this.applyButtonLabelLayout();
 
-        this.labels.title.string = this.phase === 'start' ? '力学大乱斗 v5.0' : `力学大乱斗 v5.0  第 ${this.roundNumber} 局`;
+        this.labels.title.string = this.phase === 'start' ? '力学大乱斗 v6.0' : `力学大乱斗 v6.0  第 ${this.roundNumber} 局`;
         this.labels.message.string = this.message;
         this.labels.reset.string = '重开';
         this.labels.action.string = this.primaryLabel();
@@ -2141,7 +2297,7 @@ export class MechanicsBrawlGame extends Component {
     private sceneText() {
         const fields = this.fields.map((field) => `${field.label} ${field.remainingSec}s ${field.maxForceN > 0 ? field.maxForceN.toFixed(2) + 'N' : ''}`).join('；') || '无场源';
         const pending = this.pendingIntents.map((intent) => intent.card.name).join('、') || '无计划';
-        return `地图 12.0 m x 6.8 m；场源：${fields}；墙体 ${this.walls.length}；本回合计划：${pending}`;
+        return `地图 ${this.arenaM.w.toFixed(1)} m x ${this.arenaM.h.toFixed(1)} m；场源：${fields}；墙体 ${this.walls.length}；本回合计划：${pending}`;
     }
 
     private playerText(index: number) {
@@ -2414,28 +2570,53 @@ export class MechanicsBrawlGame extends Component {
     }
 
     private cardRect(index: number): RectLike {
-        const total = this.maxHandSize * this.cardW + (this.maxHandSize - 1) * this.cardGap;
+        if (this.layoutMode === 'landscape') {
+            const total = this.maxHandSize * this.cardW + (this.maxHandSize - 1) * this.cardGap;
+            return {
+                x: -total / 2 + index * (this.cardW + this.cardGap),
+                y: -340,
+                w: this.cardW,
+                h: this.cardH,
+            };
+        }
+
+        const columns = 3;
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const total = columns * this.cardW + (columns - 1) * this.cardGap;
         return {
-            x: -total / 2 + index * (this.cardW + this.cardGap),
-            y: -340,
+            x: -total / 2 + column * (this.cardW + this.cardGap),
+            y: -510 - row * (this.cardH + this.cardGap),
             w: this.cardW,
             h: this.cardH,
         };
     }
 
     private resetRect(): RectLike {
-        return { x: 525, y: 292, w: 92, h: 38 };
+        if (this.layoutMode === 'landscape') {
+            return { x: 525, y: 292, w: 92, h: 38 };
+        }
+        return { x: -338, y: 268, w: 96, h: 40 };
     }
 
     private primaryRect(): RectLike {
         if (this.phase === 'start') {
-            return { x: -120, y: -50, w: 240, h: 58 };
+            if (this.layoutMode === 'landscape') {
+                return { x: -120, y: -50, w: 240, h: 58 };
+            }
+            return { x: -130, y: -116, w: 260, h: 64 };
         }
-        return { x: 525, y: 246, w: 92, h: 38 };
+        if (this.layoutMode === 'landscape') {
+            return { x: 525, y: 246, w: 92, h: 38 };
+        }
+        return { x: 232, y: 268, w: 106, h: 40 };
     }
 
     private discardRect(): RectLike {
-        return { x: 411, y: 246, w: 92, h: 38 };
+        if (this.layoutMode === 'landscape') {
+            return { x: 411, y: 246, w: 92, h: 38 };
+        }
+        return { x: -228, y: 268, w: 106, h: 40 };
     }
 
     private configPanelRect(): RectLike {
