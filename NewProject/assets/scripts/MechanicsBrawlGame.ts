@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, EventMouse, Graphics, input, Input, Label, Node, profiler, UITransform, Vec2, Vec3 } from 'cc';
+import { _decorator, AudioClip, AudioSource, Color, Component, EventMouse, Graphics, input, Input, Label, Node, profiler, resources, UITransform, Vec2, Vec3 } from 'cc';
 
 const { ccclass } = _decorator;
 
@@ -19,7 +19,8 @@ type CardKind =
     | 'dampingZone';
 type TargetMode = 'self' | 'opponent' | 'arena' | 'wall' | 'ownField';
 type FieldType = 'wind' | 'charge' | 'friction' | 'damping';
-type SoundCue = 'dice' | 'wind' | 'electric' | 'wall' | 'math' | 'click';
+type SoundCue = 'dice' | 'wind' | 'ice' | 'electronic' | 'wall' | 'math' | 'click';
+type AudioKey = 'start' | 'game' | 'dice' | 'wind' | 'ice' | 'electronic';
 
 interface RectLike {
     x: number;
@@ -178,6 +179,11 @@ export class MechanicsBrawlGame extends Component {
     private attrEffectId = 1;
     private snowTick = 0;
     private audioCtx: any = null;
+    private bgmSource!: AudioSource;
+    private sfxSource!: AudioSource;
+    private audioClips: Partial<Record<AudioKey, AudioClip>> = {};
+    private desiredBgm: AudioKey | null = null;
+    private currentBgm: AudioKey | null = null;
 
     private readonly arenaM: RectLike = { x: -6, y: -3.4, w: 12, h: 6.8 };
     private readonly pxPerM = 74;
@@ -191,6 +197,14 @@ export class MechanicsBrawlGame extends Component {
     private readonly cardH = 70;
     private readonly cardGap = 10;
     private readonly dragStartThreshold = 12;
+    private readonly audioPaths: Record<AudioKey, string> = {
+        start: 'audio/start',
+        game: 'audio/game',
+        dice: 'audio/num',
+        wind: 'audio/wind',
+        ice: 'audio/ice',
+        electronic: 'audio/electronic',
+    };
 
     onLoad() {
         this.node.removeAllChildren();
@@ -198,6 +212,7 @@ export class MechanicsBrawlGame extends Component {
         this.canvas.setContentSize(1280, 720);
         this.createCards();
         this.createLayers();
+        this.createAudioSources();
         this.createLabels();
         this.resetToStart();
         profiler.hideStats();
@@ -243,6 +258,39 @@ export class MechanicsBrawlGame extends Component {
         hud.setParent(this.node);
         hud.addComponent(UITransform).setContentSize(1280, 720);
         this.hudG = hud.addComponent(Graphics);
+    }
+
+    private createAudioSources() {
+        const bgm = new Node('BgmAudio');
+        bgm.layer = this.node.layer;
+        bgm.setParent(this.node);
+        this.bgmSource = bgm.addComponent(AudioSource);
+        this.bgmSource.loop = true;
+        this.bgmSource.volume = 0.36;
+
+        const sfx = new Node('SfxAudio');
+        sfx.layer = this.node.layer;
+        sfx.setParent(this.node);
+        this.sfxSource = sfx.addComponent(AudioSource);
+        this.sfxSource.loop = false;
+        this.sfxSource.volume = 0.72;
+
+        this.loadAudioClips();
+    }
+
+    private loadAudioClips() {
+        const keys = Object.keys(this.audioPaths) as AudioKey[];
+        for (const key of keys) {
+            resources.load(this.audioPaths[key], AudioClip, (err, clip) => {
+                if (err || !clip) {
+                    return;
+                }
+                this.audioClips[key] = clip;
+                if (this.desiredBgm === key) {
+                    this.playBgm(key);
+                }
+            });
+        }
     }
 
     private createLabels() {
@@ -369,12 +417,14 @@ export class MechanicsBrawlGame extends Component {
         this.turnTimer = 120;
         this.message = '点击开始，进入像素实验台。开局骰子点数 1-3 牛顿先手，4-6 麦克斯韦先手。';
         this.createInitialFighters();
+        this.playBgm('start');
     }
 
     private beginMatch() {
         this.roundWins = [0, 0];
         this.roundNumber = 1;
         this.createInitialFighters();
+        this.playBgm('game');
         this.startFirstDice();
     }
 
@@ -705,7 +755,7 @@ export class MechanicsBrawlGame extends Component {
         if (draft.card.kind === 'chargeField' && this.hitRect(point, this.configSignRect())) {
             draft.chargeSign *= -1;
             this.cardInfoText = this.fieldConfigText();
-            this.playCue('electric');
+            this.playCue('electronic');
             return true;
         }
 
@@ -809,15 +859,20 @@ export class MechanicsBrawlGame extends Component {
             switch (card.kind) {
                 case 'windField':
                     this.addField(owner, 'wind', intent.positionM, intent.direction, card.values.radiusM, intent.fieldStrengthN || card.values.forceN, 0, 0, card.durationSec, card.name, card.color);
+                    this.playCue('wind');
                     break;
                 case 'chargeField': {
                     const sign = owner === 0 ? 1 : -1;
                     this.addField(owner, 'charge', intent.positionM, intent.direction, card.values.radiusM, intent.fieldStrengthN || card.values.forceN, intent.sourceChargeC || card.values.chargeC * sign, 0, card.durationSec, card.name, card.color);
+                    this.playCue('electronic');
                     break;
                 }
                 case 'frictionZone':
                 case 'dampingZone':
                     this.addField(owner, card.kind === 'dampingZone' ? 'damping' : 'friction', intent.positionM, new Vec2(), card.values.radiusM, 0, 0, card.values.frictionDelta, card.durationSec, card.name, card.color);
+                    if (card.values.frictionDelta < 0) {
+                        this.playCue('ice');
+                    }
                     break;
                 case 'wallCreate':
                     this.tryCreateWallFromIntent(intent);
@@ -844,7 +899,7 @@ export class MechanicsBrawlGame extends Component {
                     break;
                 case 'chargeFlip':
                     this.fighters[opponent].baseChargeC = this.clamp(-this.fighters[opponent].baseChargeC, -5, 5);
-                    this.playCue('electric');
+                    this.playCue('electronic');
                     break;
                 case 'fieldBoost':
                     this.boostLatestOwnField(owner, card.values.multiplier || 1.5);
@@ -1139,6 +1194,7 @@ export class MechanicsBrawlGame extends Component {
         this.nextRoundFirst = 1 - winner;
         this.message = `${reason}${this.fighters[winner].name} 赢得第 ${this.roundNumber} 局。下一局败者先手：${this.fighters[this.nextRoundFirst].name}。`;
         this.roundNumber += 1;
+        this.playBgm('game');
     }
 
     private addField(owner: number, type: FieldType, positionM: Vec2, direction: Vec2, radiusM: number, maxForceN: number, sourceChargeC: number, frictionDelta: number, durationSec: number, label: string, color: Color) {
@@ -1266,7 +1322,7 @@ export class MechanicsBrawlGame extends Component {
         } else {
             this.fighters[index].baseChargeC = this.clamp(charge - Math.sign(charge) * amount, -5, 5);
         }
-        this.playCue('electric');
+        this.playCue('electronic');
     }
 
     private boostLatestOwnField(owner: number, multiplier: number) {
@@ -1897,7 +1953,7 @@ export class MechanicsBrawlGame extends Component {
             actionTransform.setContentSize(primary.w, primary.h);
         }
 
-        this.labels.title.string = this.phase === 'start' ? '力学大乱斗 v4.0' : `力学大乱斗 v4.0  第 ${this.roundNumber} 局`;
+        this.labels.title.string = this.phase === 'start' ? '力学大乱斗 v5.0' : `力学大乱斗 v5.0  第 ${this.roundNumber} 局`;
         this.labels.message.string = this.message;
         this.labels.reset.string = '重开';
         this.labels.action.string = this.primaryLabel();
@@ -2102,7 +2158,9 @@ export class MechanicsBrawlGame extends Component {
 
     private playSettlementCue() {
         if (this.fields.some((field) => field.type === 'charge')) {
-            this.playCue('electric');
+            this.playCue('electronic');
+        } else if (this.fields.some((field) => field.type === 'friction' && field.frictionDelta < 0)) {
+            this.playCue('ice');
         } else if (this.fields.some((field) => field.type === 'wind' || field.type === 'friction')) {
             this.playCue('wind');
         } else {
@@ -2110,7 +2168,44 @@ export class MechanicsBrawlGame extends Component {
         }
     }
 
+    private playBgm(key: AudioKey) {
+        this.desiredBgm = key;
+        const clip = this.audioClips[key];
+        if (!clip || !this.bgmSource) {
+            return;
+        }
+        if (this.currentBgm === key && this.bgmSource.clip === clip) {
+            return;
+        }
+        this.bgmSource.stop();
+        this.bgmSource.clip = clip;
+        this.bgmSource.loop = true;
+        this.bgmSource.volume = key === 'start' ? 0.42 : 0.34;
+        this.bgmSource.play();
+        this.currentBgm = key;
+    }
+
+    private playAudioClip(key: AudioKey, volume = 0.72) {
+        const clip = this.audioClips[key];
+        if (!clip || !this.sfxSource) {
+            return false;
+        }
+        this.sfxSource.playOneShot(clip, volume);
+        return true;
+    }
+
     private playCue(kind: SoundCue) {
+        const assetMap: Partial<Record<SoundCue, AudioKey>> = {
+            dice: 'dice',
+            wind: 'wind',
+            ice: 'ice',
+            electronic: 'electronic',
+        };
+        const asset = assetMap[kind];
+        if (asset && this.playAudioClip(asset, kind === 'dice' ? 0.80 : 0.70)) {
+            return;
+        }
+
         const Ctor = (globalThis as any).AudioContext || (globalThis as any).webkitAudioContext;
         if (!Ctor) {
             return;
@@ -2126,7 +2221,8 @@ export class MechanicsBrawlGame extends Component {
             const config: Record<SoundCue, [number, number, string]> = {
                 dice: [220, 0.16, 'triangle'],
                 wind: [110, 0.32, 'sawtooth'],
-                electric: [760, 0.10, 'square'],
+                ice: [410, 0.18, 'triangle'],
+                electronic: [760, 0.10, 'square'],
                 wall: [150, 0.12, 'sine'],
                 math: [520, 0.12, 'triangle'],
                 click: [330, 0.06, 'sine'],
@@ -2134,7 +2230,7 @@ export class MechanicsBrawlGame extends Component {
             const [freq, duration, type] = config[kind];
             osc.type = type as any;
             osc.frequency.setValueAtTime(freq, now);
-            if (kind === 'electric') {
+            if (kind === 'electronic') {
                 osc.frequency.exponentialRampToValueAtTime(1120, now + duration);
             }
             gain.gain.setValueAtTime(0.0001, now);
