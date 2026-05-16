@@ -191,6 +191,7 @@ export class MechanicsBrawlGame extends Component {
     private characterSpriteFrames: Array<SpriteFrame | null> = [null, null];
 
     private layoutMode: ClientLayoutMode = 'portrait';
+    private layoutScale = 1;
     private designW = 720;
     private designH = 1280;
     private arenaM: RectLike = { x: -5, y: -4.05, w: 10, h: 8.1 };
@@ -405,32 +406,49 @@ export class MechanicsBrawlGame extends Component {
     private applyClientLayout(force = false) {
         const visible = view.getVisibleSize();
         const nextMode: ClientLayoutMode = visible.width >= visible.height ? 'landscape' : 'portrait';
-        if (!force && nextMode === this.layoutMode) {
+        const baseW = nextMode === 'landscape' ? 1280 : 720;
+        const baseH = nextMode === 'landscape' ? 720 : 1280;
+        const visibleW = Math.max(1, visible.width || baseW);
+        const visibleH = Math.max(1, visible.height || baseH);
+        const nextScale = Math.max(0.01, Math.min(visibleW / baseW, visibleH / baseH));
+        if (!force && nextMode === this.layoutMode && Math.abs(nextScale - this.layoutScale) < 0.005) {
             return;
         }
 
         this.layoutMode = nextMode;
+        this.layoutScale = nextScale;
+        this.designW = visibleW;
+        this.designH = visibleH;
         if (nextMode === 'landscape') {
-            this.designW = 1280;
-            this.designH = 720;
             this.arenaM = { x: -6, y: -3.4, w: 12, h: 6.8 };
-            this.pxPerM = 74;
-            this.cardW = 112;
-            this.cardH = 70;
-            this.cardGap = 10;
+            this.pxPerM = this.scaled(74);
+            this.cardW = this.scaled(112);
+            this.cardH = this.scaled(70);
+            this.cardGap = this.scaled(10);
         } else {
-            this.designW = 720;
-            this.designH = 1280;
             this.arenaM = { x: -5, y: -4.05, w: 10, h: 8.1 };
-            this.pxPerM = 64;
-            this.cardW = 104;
-            this.cardH = 82;
-            this.cardGap = 12;
+            this.pxPerM = this.scaled(64);
+            this.cardW = this.scaled(104);
+            this.cardH = this.scaled(82);
+            this.cardGap = this.scaled(12);
         }
 
         this.resizeLayoutNodes();
         this.applyLabelLayout();
         this.clampFightersToArena();
+    }
+
+    private scaled(value: number) {
+        return value * this.layoutScale;
+    }
+
+    private scaledRect(x: number, y: number, w: number, h: number): RectLike {
+        return {
+            x: this.scaled(x),
+            y: this.scaled(y),
+            w: this.scaled(w),
+            h: this.scaled(h),
+        };
     }
 
     private resizeLayoutNodes() {
@@ -458,31 +476,41 @@ export class MechanicsBrawlGame extends Component {
         }
 
         if (this.layoutMode === 'landscape') {
-            this.setLabelBox('title', 0, 328, 560, 34, 24);
-            this.setLabelBox('turn', -250, 292, 360, 30, 16);
-            this.setLabelBox('timer', 126, 292, 300, 30, 16);
-            this.setLabelBox('field', 0, 251, 900, 38, 13);
-            this.setLabelBox('message', 0, 270, 820, 30, 16);
-            this.setLabelBox('p0', -508, 205, 255, 96, 12);
-            this.setLabelBox('p1', 508, 205, 255, 96, 12);
-            this.setLabelBox('hint', 0, -214, 960, 24, 13);
-            this.setLabelBox('cardInfo', 0, -245, 1120, 54, 12);
+            this.setScaledLabelBox('title', 0, 328, 560, 34, 24);
+            this.setScaledLabelBox('turn', -250, 292, 360, 30, 16);
+            this.setScaledLabelBox('timer', 126, 292, 300, 30, 16);
+            this.setScaledLabelBox('field', 0, 251, 900, 38, 13);
+            this.setScaledLabelBox('message', 0, 270, 820, 30, 16);
+            this.setScaledLabelBox('p0', -508, 205, 255, 96, 12);
+            this.setScaledLabelBox('p1', 508, 205, 255, 96, 12);
+            this.setScaledLabelBox('hint', 0, -214, 960, 24, 13);
+            this.setScaledLabelBox('cardInfo', 0, -245, 1120, 54, 12);
         } else {
-            this.setLabelBox('title', 0, 612, 680, 34, 23);
-            this.setLabelBox('message', 0, 570, 680, 38, 15);
-            this.setLabelBox('turn', -178, 528, 332, 28, 14);
-            this.setLabelBox('timer', 178, 528, 332, 28, 14);
-            this.setLabelBox('field', 0, 470, 680, 54, 12);
-            this.setLabelBox('p0', -180, 377, 320, 116, 11);
-            this.setLabelBox('p1', 180, 377, 320, 116, 11);
-            this.setLabelBox('hint', 0, -294, 680, 28, 12);
-            this.setLabelBox('cardInfo', 0, -360, 680, 64, 12);
+            this.setScaledLabelBox('title', 0, 612, 680, 34, 23);
+            this.setScaledLabelBox('message', 0, 570, 680, 38, 15);
+            this.setScaledLabelBox('turn', -178, 528, 332, 28, 14);
+            this.setScaledLabelBox('timer', 178, 528, 332, 28, 14);
+            this.setScaledLabelBox('field', 0, 470, 680, 54, 12);
+            this.setScaledLabelBox('p0', -180, 377, 320, 116, 11);
+            this.setScaledLabelBox('p1', 180, 377, 320, 116, 11);
+            this.setScaledLabelBox('hint', 0, -294, 680, 28, 12);
+            this.setScaledLabelBox('cardInfo', 0, -360, 680, 64, 12);
         }
+        this.setScaledLabelBox('configTitle', 0, 86, 420, 24, 16);
+        this.setScaledLabelBox('configAngle', -102, 25, 160, 22, 12);
+        this.setScaledLabelBox('configValue', 102, 25, 160, 22, 12);
+        this.setScaledLabelBox('configAngleMinus', -184, -49, 44, 28, 15);
+        this.setScaledLabelBox('configAnglePlus', -58, -49, 44, 28, 15);
+        this.setScaledLabelBox('configValueMinus', 36, -49, 44, 28, 15);
+        this.setScaledLabelBox('configValuePlus', 162, -49, 44, 28, 15);
+        this.setScaledLabelBox('configSign', 102, -83, 102, 26, 13);
+        this.setScaledLabelBox('configCancel', -82, -112, 88, 28, 14);
+        this.setScaledLabelBox('configConfirm', 82, -112, 88, 28, 14);
 
         this.applyButtonLabelLayout();
         for (let i = 0; i < this.cardLabels.length; i++) {
             const r = this.cardRect(i);
-            this.setLabelBox(`card_${i}`, r.x + r.w / 2, r.y + r.h / 2 - 2, r.w - 6, r.h - 8, this.layoutMode === 'landscape' ? 13 : 12);
+            this.setLabelBox(`card_${i}`, r.x + r.w / 2, r.y + r.h / 2 - this.scaled(2), r.w - this.scaled(6), r.h - this.scaled(8), this.scaledFont(this.layoutMode === 'landscape' ? 13 : 12));
         }
     }
 
@@ -494,6 +522,10 @@ export class MechanicsBrawlGame extends Component {
 
     private setLabelToRect(key: string, rect: RectLike) {
         this.setLabelBox(key, rect.x + rect.w / 2, rect.y + rect.h / 2, rect.w, rect.h);
+    }
+
+    private setScaledLabelBox(key: string, x: number, y: number, w: number, h: number, size?: number) {
+        this.setLabelBox(key, this.scaled(x), this.scaled(y), this.scaled(w), this.scaled(h), size !== undefined ? this.scaledFont(size) : undefined);
     }
 
     private setLabelBox(key: string, x: number, y: number, w: number, h: number, size?: number) {
@@ -510,6 +542,10 @@ export class MechanicsBrawlGame extends Component {
             label.fontSize = size;
             label.lineHeight = Math.round(size * 1.18);
         }
+    }
+
+    private scaledFont(size: number) {
+        return Math.max(8, Math.round(size * this.layoutScale));
     }
 
     private clampFightersToArena() {
@@ -1707,27 +1743,28 @@ export class MechanicsBrawlGame extends Component {
 
         const halfW = this.designW / 2;
         const halfH = this.designH / 2;
-        for (let y = -halfH + 32; y <= halfH - 32; y += 32) {
-            for (let x = -halfW + 32; x <= halfW - 32; x += 32) {
-                const on = ((x + y) / 32) % 2 === 0;
+        const grid = this.scaled(32);
+        for (let y = -halfH + grid; y <= halfH - grid; y += grid) {
+            for (let x = -halfW + grid; x <= halfW - grid; x += grid) {
+                const on = ((x + y) / grid) % 2 === 0;
                 g.fillColor = on ? new Color(24, 36, 52, 255) : new Color(19, 28, 41, 255);
-                g.rect(x, y, 30, 30);
+                g.rect(x, y, this.scaled(30), this.scaled(30));
                 g.fill();
             }
         }
 
         const portrait = this.layoutMode === 'portrait';
-        const actorY = portrait ? 78 : 60;
-        const diceY = portrait ? 120 : 101;
-        const leftX = portrait ? -146 : -166;
-        const rightX = portrait ? 62 : 82;
+        const actorY = this.scaled(portrait ? 78 : 60);
+        const diceY = this.scaled(portrait ? 120 : 101);
+        const leftX = this.scaled(portrait ? -146 : -166);
+        const rightX = this.scaled(portrait ? 62 : 82);
         g.fillColor = new Color(75, 168, 255, 255);
-        g.rect(leftX, actorY, 84, 84);
+        g.rect(leftX, actorY, this.scaled(84), this.scaled(84));
         g.fill();
         g.fillColor = new Color(255, 92, 105, 255);
-        g.rect(rightX, actorY, 84, 84);
+        g.rect(rightX, actorY, this.scaled(84), this.scaled(84));
         g.fill();
-        this.drawDiceFace(g, new Vec2(0, diceY), this.dice || 1, 64);
+        this.drawDiceFace(g, new Vec2(0, diceY), this.dice || 1, this.scaled(64));
         this.drawPrimaryButton(g);
     }
 
@@ -1990,27 +2027,27 @@ export class MechanicsBrawlGame extends Component {
 
         g.fillColor = new Color(20, 27, 38, 238);
         if (portrait) {
-            g.rect(-this.designW / 2, 260, this.designW, 380);
+            g.rect(-this.designW / 2, this.scaled(260), this.designW, this.scaled(380));
         } else {
-            g.rect(-this.designW / 2, 250, this.designW, 110);
+            g.rect(-this.designW / 2, this.scaled(250), this.designW, this.scaled(110));
         }
         g.fill();
 
         g.fillColor = new Color(15, 22, 32, 242);
         if (portrait) {
-            g.rect(-this.designW / 2, -this.designH / 2, this.designW, 365);
+            g.rect(-this.designW / 2, -this.designH / 2, this.designW, this.scaled(365));
         } else {
-            g.rect(-this.designW / 2, -this.designH / 2, this.designW, 132);
+            g.rect(-this.designW / 2, -this.designH / 2, this.designW, this.scaled(132));
         }
         g.fill();
 
         if (this.phase !== 'start') {
             if (portrait) {
-                this.drawPanel(g, -350, 316, 340, 122, new Color(24, 48, 75, 235), this.currentPlayer === 0 && this.phase === 'planning');
-                this.drawPanel(g, 10, 316, 340, 122, new Color(78, 31, 39, 235), this.currentPlayer === 1 && this.phase === 'planning');
+                this.drawPanel(g, this.scaled(-350), this.scaled(316), this.scaled(340), this.scaled(122), new Color(24, 48, 75, 235), this.currentPlayer === 0 && this.phase === 'planning');
+                this.drawPanel(g, this.scaled(10), this.scaled(316), this.scaled(340), this.scaled(122), new Color(78, 31, 39, 235), this.currentPlayer === 1 && this.phase === 'planning');
             } else {
-                this.drawPanel(g, -628, 156, 268, 104, new Color(24, 48, 75, 235), this.currentPlayer === 0 && this.phase === 'planning');
-                this.drawPanel(g, 360, 156, 268, 104, new Color(78, 31, 39, 235), this.currentPlayer === 1 && this.phase === 'planning');
+                this.drawPanel(g, this.scaled(-628), this.scaled(156), this.scaled(268), this.scaled(104), new Color(24, 48, 75, 235), this.currentPlayer === 0 && this.phase === 'planning');
+                this.drawPanel(g, this.scaled(360), this.scaled(156), this.scaled(268), this.scaled(104), new Color(78, 31, 39, 235), this.currentPlayer === 1 && this.phase === 'planning');
             }
         }
 
@@ -2032,7 +2069,7 @@ export class MechanicsBrawlGame extends Component {
 
                 if (card) {
                     g.fillColor = card.color;
-                    g.rect(r.x + 4, r.y + r.h - 10, r.w - 8, 6);
+                    g.rect(r.x + this.scaled(4), r.y + r.h - this.scaled(10), r.w - this.scaled(8), this.scaled(6));
                     g.fill();
                 }
 
@@ -2052,7 +2089,7 @@ export class MechanicsBrawlGame extends Component {
                 g.rect(x, y, this.cardW, this.cardH);
                 g.fill();
                 g.fillColor = card.color;
-                g.rect(x + 4, y + this.cardH - 10, this.cardW - 8, 6);
+                g.rect(x + this.scaled(4), y + this.cardH - this.scaled(10), this.cardW - this.scaled(8), this.scaled(6));
                 g.fill();
                 g.strokeColor = this.inArenaPx(this.aimPoint) ? new Color(255, 247, 209, 255) : new Color(255, 142, 142, 255);
                 g.lineWidth = 3;
@@ -2574,7 +2611,7 @@ export class MechanicsBrawlGame extends Component {
             const total = this.maxHandSize * this.cardW + (this.maxHandSize - 1) * this.cardGap;
             return {
                 x: -total / 2 + index * (this.cardW + this.cardGap),
-                y: -340,
+                y: this.scaled(-340),
                 w: this.cardW,
                 h: this.cardH,
             };
@@ -2586,7 +2623,7 @@ export class MechanicsBrawlGame extends Component {
         const total = columns * this.cardW + (columns - 1) * this.cardGap;
         return {
             x: -total / 2 + column * (this.cardW + this.cardGap),
-            y: -510 - row * (this.cardH + this.cardGap),
+            y: this.scaled(-510) - row * (this.cardH + this.cardGap),
             w: this.cardW,
             h: this.cardH,
         };
@@ -2594,64 +2631,64 @@ export class MechanicsBrawlGame extends Component {
 
     private resetRect(): RectLike {
         if (this.layoutMode === 'landscape') {
-            return { x: 525, y: 292, w: 92, h: 38 };
+            return this.scaledRect(525, 292, 92, 38);
         }
-        return { x: -338, y: 268, w: 96, h: 40 };
+        return this.scaledRect(-338, 268, 96, 40);
     }
 
     private primaryRect(): RectLike {
         if (this.phase === 'start') {
             if (this.layoutMode === 'landscape') {
-                return { x: -120, y: -50, w: 240, h: 58 };
+                return this.scaledRect(-120, -50, 240, 58);
             }
-            return { x: -130, y: -116, w: 260, h: 64 };
+            return this.scaledRect(-130, -116, 260, 64);
         }
         if (this.layoutMode === 'landscape') {
-            return { x: 525, y: 246, w: 92, h: 38 };
+            return this.scaledRect(525, 246, 92, 38);
         }
-        return { x: 232, y: 268, w: 106, h: 40 };
+        return this.scaledRect(232, 268, 106, 40);
     }
 
     private discardRect(): RectLike {
         if (this.layoutMode === 'landscape') {
-            return { x: 411, y: 246, w: 92, h: 38 };
+            return this.scaledRect(411, 246, 92, 38);
         }
-        return { x: -228, y: 268, w: 106, h: 40 };
+        return this.scaledRect(-228, 268, 106, 40);
     }
 
     private configPanelRect(): RectLike {
-        return { x: -245, y: -132, w: 490, h: 246 };
+        return this.scaledRect(-245, -132, 490, 246);
     }
 
     private configTurntableCenter() {
-        return new Vec2(-122, 12);
+        return new Vec2(this.scaled(-122), this.scaled(12));
     }
 
     private configAngleMinusRect(): RectLike {
-        return { x: -206, y: -64, w: 44, h: 30 };
+        return this.scaledRect(-206, -64, 44, 30);
     }
 
     private configAnglePlusRect(): RectLike {
-        return { x: -80, y: -64, w: 44, h: 30 };
+        return this.scaledRect(-80, -64, 44, 30);
     }
 
     private configValueMinusRect(): RectLike {
-        return { x: 14, y: -64, w: 44, h: 30 };
+        return this.scaledRect(14, -64, 44, 30);
     }
 
     private configValuePlusRect(): RectLike {
-        return { x: 140, y: -64, w: 44, h: 30 };
+        return this.scaledRect(140, -64, 44, 30);
     }
 
     private configSignRect(): RectLike {
-        return { x: 52, y: -96, w: 100, h: 28 };
+        return this.scaledRect(52, -96, 100, 28);
     }
 
     private configCancelRect(): RectLike {
-        return { x: -126, y: -126, w: 88, h: 30 };
+        return this.scaledRect(-126, -126, 88, 30);
     }
 
     private configConfirmRect(): RectLike {
-        return { x: 38, y: -126, w: 88, h: 30 };
+        return this.scaledRect(38, -126, 88, 30);
     }
 }
