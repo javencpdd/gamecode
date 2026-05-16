@@ -1,1 +1,575 @@
-莞客松
+# 力学大乱斗仓库说明
+
+## 1. 项目概述
+
+本仓库包含一个基于 **Cocos Creator 3.8.8** 的 2D 物理卡牌对战 MVP 工程，以及与之配套的策划文档和 Cocos 编辑器扩展。
+
+当前代码实现的核心目标是快速验证以下玩法闭环：
+
+- 双角色轮流行动。
+- 每回合可连续出牌。
+- 每张卡单独进入物理结算。
+- 角色可被推挤、碰撞、出界并计分。
+- 双方使用不同的专属牌组。
+
+从实现方式看，项目当前是一个典型的 **单场景 + 单核心脚本 + 运行时动态绘制 UI** 的原型结构：绝大多数游戏逻辑都集中在 `NewProject/assets/scripts/MechanicsBrawlGame.ts` 中。
+
+## 2. 仓库结构
+
+```text
+gamecode/
+├─ README
+├─ NewProject/                              # Cocos Creator 主工程
+│  ├─ assets/
+│  │  ├─ scripts/
+│  │  │  └─ MechanicsBrawlGame.ts           # 主游戏脚本
+│  │  ├─ scene.scene                        # 主玩法场景
+│  │  └─ mcp-test-ui.scene                  # 测试/空场景
+│  ├─ extensions/
+│  │  └─ cocos-mcp-server/                  # Cocos 编辑器 MCP 扩展
+│  ├─ settings/                             # Cocos 项目与 MCP 配置
+│  ├─ package.json                          # Cocos 工程声明
+│  └─ tsconfig.json                         # TypeScript 配置
+└─ 完整游戏策划案/                           # 策划、实现说明与设计文档
+```
+
+## 3. 项目定位
+
+### 3.1 主工程
+
+`NewProject/` 是实际可运行的 Cocos Creator 工程。
+
+- 主场景：`NewProject/assets/scene.scene`
+- 主脚本：`NewProject/assets/scripts/MechanicsBrawlGame.ts`
+- 引擎版本：`3.8.8`
+
+### 3.2 编辑器扩展
+
+`NewProject/extensions/cocos-mcp-server/` 是一个 **Cocos 编辑器扩展**，主要用于：
+
+- 启停 MCP 服务。
+- 管理工具开关。
+- 生成客户端配置。
+- 暴露场景、节点、组件等编辑器操作接口。
+
+它服务于编辑器工作流，不直接参与游戏运行时主循环。
+
+### 3.3 策划文档
+
+`完整游戏策划案/` 存放设计说明、模块化策划文档与 MVP 实现说明，用于描述玩法目标、系统边界和测试重点，不参与编译执行。
+
+## 4. 技术栈与依赖
+
+### 4.1 运行时技术栈
+
+- 引擎：Cocos Creator `3.8.8`
+- 语言：TypeScript
+- 渲染方式：基于 `Graphics` 与 `Label` 的运行时绘制
+- 输入方式：Cocos `input` 全局鼠标事件
+- 物理方式：脚本内自定义的简化 2D 圆形碰撞与阻尼计算
+
+### 4.2 主工程依赖
+
+主工程 `NewProject/package.json` 只声明了 Cocos 工程元信息，没有常规的 `npm scripts`、`dependencies` 或 `devDependencies`。
+
+这意味着：
+
+- 运行主工程主要依赖 **Cocos Creator 编辑器**。
+- 构建、预览、停止预览等能力主要由 Cocos 编辑器提供。
+- 仓库本身不是一个依赖 `npm run dev` 启动的传统 Web/Node 项目。
+
+### 4.3 编辑器扩展依赖
+
+`NewProject/extensions/cocos-mcp-server/package.json` 中声明了以下依赖：
+
+- `@iarna/toml`
+- `fs-extra`
+- `uuid`
+- `vue`
+
+### 4.4 已启用的引擎模块
+
+从 `settings/v2/packages/engine.json` 可见，当前工程启用了多个 2D 相关模块，包括：
+
+- `2d`
+- `ui`
+- `graphics`
+- `audio`
+- `rich-text`
+- `physics-2d-box2d`
+- `spine-3.8`
+- `tween`
+- `video`
+- `webview`
+
+虽然启用了 `physics-2d-box2d` 等模块，但当前主玩法脚本并没有直接依赖 Box2D 组件，而是使用自定义计算推进物理结算。
+
+## 5. 整体架构
+
+### 5.1 架构总览
+
+当前项目可以概括为以下三层：
+
+```text
+场景层
+└─ scene.scene
+   └─ Canvas/MechanicsBrawl_MVP
+      └─ MechanicsBrawlGame
+
+运行时逻辑层
+└─ MechanicsBrawlGame.ts
+   ├─ 数据模型定义
+   ├─ 牌组与回合管理
+   ├─ 鼠标输入与拖拽瞄准
+   ├─ 卡牌效果结算
+   ├─ 简化物理推进
+   ├─ 出界判定与比分
+   └─ HUD/场地绘制
+
+编辑器工具层
+└─ extensions/cocos-mcp-server
+   ├─ MCP 服务管理
+   ├─ 工具开关与配置
+   ├─ IDE/CLI 客户端配置生成
+   └─ 场景/节点/组件编辑接口
+```
+
+### 5.2 运行时核心特点
+
+- **单组件集中式架构**：`MechanicsBrawlGame` 同时负责数据、输入、结算和渲染。
+- **无资源驱动 UI**：当前 HUD 不是 prefab 或静态场景搭建，而是脚本在运行时创建节点与文本。
+- **状态集中内存化**：角色、牌库、手牌、场地效果和回合状态都保存在同一个组件实例里。
+- **渲染与逻辑紧耦合**：`update()` 中直接推进结算并触发绘制，没有单独的系统总线或状态管理层。
+
+### 5.3 主要数据流
+
+```text
+onLoad
+-> 创建牌库与玩家牌组
+-> 创建绘图层与标签
+-> resetMatch 初始化整局
+-> 注册鼠标输入
+
+玩家点击/拖拽卡牌
+-> onMouseDown / onMouseMove / onMouseUp
+-> playSelectedCard
+-> 计算骰子、方向、拖拽倍率、持续回合
+-> 写入 fighters / hands / 全局场地状态
+
+进入 resolve 状态
+-> update
+-> stepPhysics
+-> resolveCollision
+-> checkRingOut
+-> updateResolve
+
+结算结束
+-> finishCardResolution
+-> 继续出牌 或 endTurn
+-> tickTurnEffects
+-> 下一位玩家抽牌
+
+每帧绘制
+-> drawWorld
+-> drawHud
+-> updateLabels
+```
+
+## 6. 主要模块职责
+
+### 6.1 `NewProject/assets/scripts/MechanicsBrawlGame.ts`
+
+这是整个运行时的核心模块，职责覆盖：
+
+- 初始化场景 UI 与绘制层。
+- 定义 12 张核心卡牌与两套专属牌组。
+- 管理双方角色属性、位置、速度、护盾、稳定、电荷和比分。
+- 实现回合状态机。
+- 处理鼠标点击、拖拽、释放。
+- 进行卡牌数值计算和骰子结算。
+- 进行简化物理推进、碰撞与出界判定。
+- 绘制场地、按钮、手牌、状态文字和说明面板。
+
+### 6.2 `NewProject/assets/scene.scene`
+
+主玩法场景，主要职责是提供：
+
+- `Canvas`
+- `Camera`
+- 根节点 `MechanicsBrawl_MVP`
+
+运行时业务入口组件挂在该场景根节点上。
+
+### 6.3 `NewProject/settings/`
+
+主要用于存放工程配置与编辑器工具配置。
+
+关键文件包括：
+
+- `settings/link-cc-mcp.json`
+  - 配置 MCP 网关地址、端口和自动启动。
+- `settings/tool-manager.json`
+  - 定义启用的工具类别及描述。
+- `settings/v2/packages/engine.json`
+  - 定义当前 Cocos 工程启用的引擎模块。
+
+### 6.4 `NewProject/extensions/cocos-mcp-server/`
+
+这是一个面向 Cocos 编辑器的扩展模块，主要职责包括：
+
+- 打开 MCP 服务控制面板。
+- 启停服务、读取服务状态、保存设置。
+- 管理工具配置与工具启用状态。
+- 为 Claude Desktop、Cursor 等客户端生成 MCP 配置。
+- 提供场景、节点、组件、Prefab、资源、视图和校验相关接口。
+
+### 6.5 `完整游戏策划案/`
+
+这部分不是运行时代码，而是项目理解和后续迭代的重要依据，主要包含：
+
+- 玩法总体大纲
+- 卡牌与人物设计
+- 关卡/场景方向
+- 轻量 Web 目标
+- Cocos MVP 实现说明
+
+## 7. 关键类、类型与函数说明
+
+### 7.1 核心类型
+
+| 符号 | 作用 |
+| --- | --- |
+| `CardKind` | 定义卡牌种类枚举，涵盖冲量、反作用、电荷、场地等效果 |
+| `TurnState` | 定义回合阶段，当前只有 `aim` 和 `resolve` |
+| `CardDef` | 定义卡牌结构，包括名称、缩写、提示、类型、基础力和颜色 |
+| `Fighter` | 定义角色运行时数据，包括位置、速度、质量、电荷、稳定、护盾与比分 |
+| `RectLike` | 定义用于命中检测和布局计算的矩形结构 |
+
+### 7.2 核心类
+
+| 类/组件 | 位置 | 说明 |
+| --- | --- | --- |
+| `MechanicsBrawlGame` | `NewProject/assets/scripts/MechanicsBrawlGame.ts` | 游戏运行时唯一核心组件，承担初始化、输入、结算、渲染和胜负判定 |
+
+### 7.3 生命周期与入口函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `onLoad()` | 初始化画布、牌库、图层、文本节点、整局状态，并注册鼠标事件 |
+| `onDestroy()` | 取消鼠标事件监听 |
+| `update(deltaTime)` | 驱动逐帧结算并调用绘制逻辑 |
+
+### 7.4 初始化与 UI 构建
+
+| 函数 | 说明 |
+| --- | --- |
+| `createLayers()` | 创建世界绘图层和 HUD 绘图层 |
+| `createLabels()` | 批量创建标题、回合、提示、卡牌信息等文本节点 |
+| `makeLabel()` | 封装 Label 节点创建逻辑 |
+| `resetMatch()` | 重置整局状态，初始化双方角色、牌组状态与开局提示 |
+| `resetRound()` | 在某回合得分后重置单局轮次，但保留比分 |
+
+### 7.5 牌组与手牌管理
+
+| 函数 | 说明 |
+| --- | --- |
+| `createDeck()` | 定义 12 张基础卡牌 |
+| `createPlayerDecks()` | 为两名角色生成不同专属牌组 |
+| `dealOpeningHands()` | 发起始手牌 |
+| `drawCardForPlayer()` | 按玩家牌组抽取一张卡，尽量避免手牌重复 |
+| `drawTurnCards()` | 在回合开始时补牌 |
+| `consumePlayedCard()` | 移除已打出的手牌 |
+| `currentHand()` | 获取当前玩家手牌 |
+
+### 7.6 回合与物理结算
+
+| 函数 | 说明 |
+| --- | --- |
+| `stepPhysics(dt)` | 更新速度、位置、阻尼和全局场力 |
+| `updateResolve(dt)` | 监控结算是否静止或超时，并触发收尾 |
+| `finishCardResolution()` | 单张卡牌结算结束后决定继续出牌还是结束回合 |
+| `endTurn()` | 切换当前玩家、处理抽牌并刷新提示文本 |
+| `tickTurnEffects()` | 衰减全局和角色的持续状态 |
+| `skipTurn()` | 在未出牌或已出牌后结束当前玩家回合 |
+| `resolveCollision()` | 处理两名角色的圆形碰撞和冲量交换 |
+| `checkRingOut()` | 判定角色是否出界、计分以及整局胜利 |
+
+### 7.7 输入与出牌
+
+| 函数 | 说明 |
+| --- | --- |
+| `onMouseDown()` | 处理选卡、重开按钮、跳过按钮和场内选点 |
+| `onMouseMove()` | 处理拖拽开始判定和瞄准点更新 |
+| `onMouseUp()` | 处理拖拽释放、场内释放检查和出牌触发 |
+| `playSelectedCard()` | 核心结算函数，根据卡牌类型修改角色和场地状态 |
+
+### 7.8 数值与规则辅助函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `addImpulse()` | 给角色施加冲量，并考虑护盾对受力的抑制 |
+| `diceMultiplier()` | 根据骰子点数计算倍率 |
+| `cardPower()` | 计算卡牌有效力 |
+| `dragMultiplier()` | 根据拖拽距离计算倍率 |
+| `chargeAmount()` | 计算电荷变化量 |
+| `cardDuration()` | 计算持续效果回合数 |
+| `cardFormula()` | 返回面向说明文本的数值公式描述 |
+| `cardDetails()` | 汇总卡牌提示、公式和点数区间结果 |
+| `cardOutcomeText()` | 生成某个骰子点数下的结果预览 |
+| `aimDirection()` | 计算卡牌作用方向 |
+| `directionBetween()` | 计算两个点之间的单位方向 |
+
+### 7.9 命中检测与布局
+
+| 函数 | 说明 |
+| --- | --- |
+| `toLocalPoint()` | 将鼠标 UI 坐标转换为场景局部坐标 |
+| `inArena()` | 判定点是否位于实验台内 |
+| `hitCard()` | 判定是否命中当前玩家手牌 |
+| `hitReset()` | 判定是否命中重开按钮 |
+| `hitSkip()` | 判定是否命中跳过/结束按钮 |
+| `cardRect()` | 计算卡牌在 HUD 中的矩形区域 |
+| `resetRect()` | 计算重开按钮区域 |
+| `skipRect()` | 计算跳过按钮区域 |
+
+### 7.10 渲染相关函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `draw()` | 渲染总入口 |
+| `drawWorld()` | 绘制背景、场地、网格和战斗单位 |
+| `drawHud()` | 绘制按钮、手牌槽、面板等 HUD 图形 |
+| `updateLabels()` | 更新所有标签文本 |
+| `playerText()` | 生成玩家状态文案 |
+| `fieldText()` | 生成场地效果文案 |
+
+## 8. 模块依赖关系
+
+### 8.1 运行时依赖
+
+```text
+scene.scene
+-> 挂载 MechanicsBrawlGame
+
+MechanicsBrawlGame
+-> 使用 cc.Component / Graphics / Label / input / UITransform / Vec2 / Vec3
+-> 管理 cards / decks / hands
+-> 管理 fighters / turnState / field effects
+-> 输出到 Graphics 和 Label
+```
+
+### 8.2 编辑器扩展依赖
+
+```text
+cocos-mcp-server
+-> Vue                       # 面板 UI
+-> fs-extra / uuid / TOML    # 配置与文件处理
+-> dist/main.js              # 扩展入口
+-> dist/scene.js             # 场景桥接入口
+-> settings/tool-manager.json
+-> settings/link-cc-mcp.json
+```
+
+### 8.3 仓库层面的关系
+
+```text
+完整游戏策划案
+-> 提供玩法规则与实现目标
+
+NewProject
+-> 根据策划实现当前 MVP
+
+extensions/cocos-mcp-server
+-> 为 NewProject 提供编辑器自动化与工具化支持
+```
+
+## 9. Cocos MCP 扩展模块说明
+
+从扩展清单和工具配置可以确认，这个扩展至少覆盖以下能力：
+
+- `scene`
+  - 场景打开、保存、创建、层级读取、基础校验。
+- `node`
+  - 节点创建、查询、移动、复制、挂载脚本和批量修改。
+- `component`
+  - 组件增删、属性读取和事件绑定。
+- `prefab`
+  - 预制体创建、实例化、编辑与应用。
+- `asset`
+  - 资源搜索、查询、删除和路径/UUID 转换。
+- `editor`
+  - 编辑器信息、日志、偏好、构建、预览和重载。
+- `view`
+  - 视口、相机、2D/3D 模式和参考图控制。
+- `validate`
+  - 布局、引用、层级等高级校验。
+- `builder`
+  - 根据 JSON 一次性构建节点树。
+- `animation`
+  - 动画剪辑、关键帧、事件和预设操作。
+- `spine`
+  - Spine 动画相关操作。
+- `label`
+  - 文本内容与样式批量修改。
+
+对当前游戏 MVP 来说，这部分不是必须运行时依赖，但对编辑器自动化、AI 辅助搭建和后续迭代很重要。
+
+## 10. 运行方式
+
+### 10.1 前置条件
+
+- 已安装 **Cocos Creator 3.8.8**
+- 使用 Windows 环境打开本仓库中的 `NewProject/`
+
+### 10.2 打开项目
+
+1. 启动 Cocos Creator `3.8.8`
+2. 打开目录：`NewProject/`
+3. 进入主场景：`assets/scene.scene`
+4. 确认根节点 `Canvas/MechanicsBrawl_MVP` 已挂载 `MechanicsBrawlGame`
+
+### 10.3 运行项目
+
+由于仓库没有定义标准 npm 启动脚本，主项目的运行方式是：
+
+1. 在 Cocos Creator 中打开工程
+2. 打开 `assets/scene.scene`
+3. 点击编辑器的预览/运行按钮
+
+### 10.4 基本操作方式
+
+- 单击手牌：查看卡牌说明和点数结果预览
+- 拖拽手牌到实验台内：瞄准并释放卡牌
+- 点击右上角 `跳过/结束`：结束当前行动
+- 点击右上角 `重开`：重置整局
+
+### 10.5 MCP 服务配置
+
+当前项目的 MCP 网关配置位于：
+
+- `NewProject/settings/link-cc-mcp.json`
+
+默认配置为：
+
+```json
+{
+  "gateway": {
+    "port": 3200,
+    "host": "127.0.0.1",
+    "autoStart": true
+  }
+}
+```
+
+需要注意：
+
+- 扩展安装说明 `extensions/cocos-mcp-server/INSTALL.md` 中的示例地址是 `http://127.0.0.1:3000/mcp`
+- 但当前项目实际配置是 `http://127.0.0.1:3200/mcp`
+
+在本仓库上下文中，建议以 **`3200`** 为准。
+
+## 11. 可执行脚本与工具
+
+### 11.1 主工程
+
+主工程没有提供以下常见脚本：
+
+- `npm run dev`
+- `npm run build`
+- `npm run test`
+
+### 11.2 扩展附带脚本
+
+扩展目录下存在两个可直接执行的 Node 脚本：
+
+```bash
+node NewProject/extensions/cocos-mcp-server/scripts/preinstall.js
+node NewProject/extensions/cocos-mcp-server/scripts/validate-schemas.js
+```
+
+其中：
+
+- `preinstall.js` 用于安装前检查。
+- `validate-schemas.js` 用于校验 MCP 工具的 `inputSchema`。
+
+需要注意的是，`validate-schemas.js` 在某些情况下会提示先执行 `npm run build`，但扩展 `package.json` 中未显式声明该脚本，因此这部分更像是发布流程中的内部约定，而不是仓库当前可直接使用的公共命令。
+
+## 12. 测试现状
+
+当前仓库**未发现自动化测试框架或测试文件**，包括但不限于：
+
+- Jest
+- Vitest
+- Playwright
+- Cypress
+- Mocha
+- Pytest
+
+当前验证方式主要依赖：
+
+- 在 Cocos Creator 中预览运行
+- 结合 `完整游戏策划案/v3.0_Cocos_MVP策划文档/03_Cocos_MVP实现说明.md` 中列出的人工验收清单进行测试
+
+推荐的人工测试重点包括：
+
+1. 预览是否能正常打开。
+2. 当前玩家是否只显示自己的手牌，且手牌上限为 6。
+3. 双方角色是否使用不同牌组。
+4. 回合开始是否抽 2 张卡。
+5. 单击卡牌是否能显示 1 到 6 点数预估结果。
+6. 拖拽时说明面板是否实时更新。
+7. 卡牌释放后是否进入结算阶段并锁定输入。
+8. 结算结束后是否允许继续出牌。
+9. 点击结束后是否正确切换玩家。
+10. 角色出界后是否正确计分并在 3 分时结束整局。
+
+## 13. 当前实现特点与局限
+
+### 13.1 优点
+
+- 结构集中，便于快速验证玩法。
+- 不依赖复杂资源链，修改反馈快。
+- 卡牌说明、公式和点数结果可视化程度较高。
+- 双方牌组已经具备差异化。
+
+### 13.2 当前局限
+
+- 运行时代码高度集中在单一脚本中，后期扩展成本较高。
+- 逻辑、渲染、输入和文案紧耦合，不利于单元测试。
+- 没有角色选择界面、能量系统和更完整的 UI 流程。
+- 当前地图只有一张实验台。
+- 对局验证仍以人工测试为主。
+
+## 14. 后续重构建议
+
+如果项目从 MVP 继续演进，建议优先拆分以下模块：
+
+- `TurnController`
+  - 管理回合状态机、出牌次数、抽牌和换人。
+- `CardSystem`
+  - 管理卡牌定义、牌组、手牌和数值结算。
+- `PhysicsResolver`
+  - 管理阻尼、碰撞、出界与持续场地效果。
+- `BattleHud`
+  - 管理标签、按钮、卡牌面板和说明文本。
+- `CharacterData`
+  - 管理角色基础属性与战斗状态。
+
+这样的拆分可以降低 `MechanicsBrawlGame` 的体量，提高可维护性，也更便于补充自动化测试。
+
+## 15. 结论
+
+这个仓库的本质是：
+
+- 一个 **Cocos Creator 3.8.8 的物理卡牌对战 MVP 工程**
+- 一个 **围绕该工程的 MCP 编辑器扩展**
+- 一套 **较完整的策划与实现说明文档**
+
+如果只关注游戏运行时，理解成本的重点几乎全部集中在：
+
+- `NewProject/assets/scene.scene`
+- `NewProject/assets/scripts/MechanicsBrawlGame.ts`
+- `NewProject/settings/link-cc-mcp.json`
+- `NewProject/settings/tool-manager.json`
+
+如果后续要继续维护或扩展本项目，建议先从 `MechanicsBrawlGame.ts` 的模块拆分入手，再逐步补齐测试和资源化 UI。

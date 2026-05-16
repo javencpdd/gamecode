@@ -64,6 +64,7 @@ export class MechanicsBrawlGame extends Component {
     private selectedCard = -1;
     private dice = 1;
     private turnCount = 1;
+    private cardsPlayedThisTurn = 0;
     private turnState: TurnState = 'aim';
     private resolveTimer = 0;
     private aiming = false;
@@ -241,6 +242,7 @@ export class MechanicsBrawlGame extends Component {
         this.turnState = 'aim';
         this.resolveTimer = 0;
         this.turnCount = 1;
+        this.cardsPlayedThisTurn = 0;
         this.dice = 1;
         this.dealOpeningHands();
         const drawn = this.drawTurnCards(this.currentPlayer);
@@ -248,7 +250,7 @@ export class MechanicsBrawlGame extends Component {
         this.slopeTurns = 0;
         this.cardInfoText = '';
         this.gameOver = false;
-        this.message = `回合开始，${this.fighters[this.currentPlayer].name} 抽 ${drawn} 张。拖动手牌到实验台内释放。`;
+        this.message = `回合开始，${this.fighters[this.currentPlayer].name} 抽 ${drawn} 张。可以连续出牌，或点跳过交给对手。`;
     }
 
     private resetRound(winnerIndex: number, reason = '') {
@@ -273,10 +275,11 @@ export class MechanicsBrawlGame extends Component {
         this.pressedCardIndex = -1;
         this.turnState = 'aim';
         this.resolveTimer = 0;
+        this.cardsPlayedThisTurn = 0;
         this.dealOpeningHands();
         const drawn = this.drawTurnCards(this.currentPlayer);
         this.cardInfoText = '';
-        this.message = `${reason}${this.fighters[this.currentPlayer].name} 下一回合，抽 ${drawn} 张。`;
+        this.message = `${reason}${this.fighters[this.currentPlayer].name} 开始新回合，抽 ${drawn} 张。可以连续出牌。`;
     }
 
     private dealOpeningHands() {
@@ -353,16 +356,35 @@ export class MechanicsBrawlGame extends Component {
                     fighter.vel.set(0, 0);
                 }
             }
-            this.endTurn();
+            this.finishCardResolution();
         }
+    }
+
+    private finishCardResolution() {
+        const actor = this.fighters[this.currentPlayer];
+        this.selectedCard = -1;
+        this.aiming = false;
+        this.draggingCard = false;
+        this.pressedCardIndex = -1;
+        this.turnState = 'aim';
+        this.resolveTimer = 0;
+
+        if (this.currentHand().length === 0) {
+            this.endTurn(`${actor.name} 手牌已空，本回合共使用 ${this.cardsPlayedThisTurn} 张卡。`);
+            return;
+        }
+
+        this.message = `${actor.name} 本回合已使用 ${this.cardsPlayedThisTurn} 张卡。可以继续出牌，或点击结束交给对手。`;
     }
 
     private endTurn(reason = '') {
         this.currentPlayer = 1 - this.currentPlayer;
         this.turnCount += 1;
+        this.cardsPlayedThisTurn = 0;
         this.selectedCard = -1;
         this.aiming = false;
         this.draggingCard = false;
+        this.pressedCardIndex = -1;
         this.turnState = 'aim';
         this.resolveTimer = 0;
         this.tickTurnEffects();
@@ -388,11 +410,15 @@ export class MechanicsBrawlGame extends Component {
 
     private skipTurn() {
         const actor = this.fighters[this.currentPlayer];
+        const played = this.cardsPlayedThisTurn;
         this.selectedCard = -1;
         this.aiming = false;
         this.draggingCard = false;
         this.pressedCardIndex = -1;
-        this.endTurn(`${actor.name} 跳过回合。`);
+        const reason = played > 0
+            ? `${actor.name} 结束回合，本回合共使用 ${played} 张卡。`
+            : `${actor.name} 跳过回合。`;
+        this.endTurn(reason);
     }
 
     private resolveCollision() {
@@ -474,7 +500,7 @@ export class MechanicsBrawlGame extends Component {
         }
 
         if (this.turnState !== 'aim') {
-            this.message = '物理结算中，结算完成后自动进入下一回合。';
+            this.message = '物理结算中，结算完成后当前玩家可以继续出牌。';
             return;
         }
 
@@ -659,10 +685,11 @@ export class MechanicsBrawlGame extends Component {
         }
 
         this.consumePlayedCard(playerIndex, cardIndex);
+        this.cardsPlayedThisTurn += 1;
         this.turnState = 'resolve';
         this.resolveTimer = 0;
         this.cardInfoText = this.cardDetails(card, power, dragScale, chargeAmount);
-        this.message = `${actor.name} 打出 ${card.name}，骰子点数 ${this.dice}，有效力 ${Math.round(power)}。物理结算中...`;
+        this.message = `${actor.name} 打出第 ${this.cardsPlayedThisTurn} 张卡：${card.name}，骰子点数 ${this.dice}，有效力 ${Math.round(power)}。物理结算中...`;
         this.selectedCard = -1;
         this.draggingCard = false;
     }
@@ -1130,21 +1157,21 @@ export class MechanicsBrawlGame extends Component {
     private updateLabels() {
         const actor = this.fighters[this.currentPlayer];
         this.labels.title.string = '力学大乱斗 Cocos MVP';
-        this.labels.turn.string = `第 ${this.turnCount} 回合 / 当前：${actor.name}`;
+        this.labels.turn.string = `第 ${this.turnCount} 回合 / 当前：${actor.name} / 已出 ${this.cardsPlayedThisTurn} 张`;
         this.labels.dice.string = `最近骰子：${this.dice}`;
         this.labels.message.string = this.message;
         this.labels.reset.string = '重开';
-        this.labels.skip.string = '跳过';
+        this.labels.skip.string = this.cardsPlayedThisTurn > 0 ? '结束' : '跳过';
         this.labels.skip.color = this.turnState === 'aim' && !this.gameOver ? new Color(238, 244, 255, 255) : new Color(142, 154, 170, 255);
         this.labels.p0.string = this.playerText(0);
         this.labels.p1.string = this.playerText(1);
         this.labels.cardInfo.string = this.cardInfoText || '单击卡牌查看基础数值、公式和持续回合；拖拽卡牌到实验台内释放。';
         const selected = this.currentHand()[this.selectedCard];
         this.labels.hint.string = this.turnState === 'resolve'
-            ? `结算阶段：等待速度降到阈值，或 ${Math.max(0, this.maxResolveTime - this.resolveTimer).toFixed(1)} 秒后进入下一回合。`
+            ? `结算阶段：等待速度降到阈值，或 ${Math.max(0, this.maxResolveTime - this.resolveTimer).toFixed(1)} 秒后继续由 ${actor.name} 出牌。`
             : selected
-                ? `已选：${selected.name}。打出后会消耗；也可以点跳过直接交给对手。`
-                : `${actor.name} 手牌 ${this.currentHand().length}/${this.maxHandSize}。每回合抽 ${this.cardsDrawnPerTurn} 张，打出的卡会消耗。`;
+                ? `已选：${selected.name}。打出后会消耗；本回合可继续出牌，也可以点${this.cardsPlayedThisTurn > 0 ? '结束' : '跳过'}交给对手。`
+                : `${actor.name} 手牌 ${this.currentHand().length}/${this.maxHandSize}。本回合已出 ${this.cardsPlayedThisTurn} 张；可连续出牌，点${this.cardsPlayedThisTurn > 0 ? '结束' : '跳过'}换人。`;
         this.labels.field.string = this.fieldText();
 
         const resetLabel = this.labels.message;
