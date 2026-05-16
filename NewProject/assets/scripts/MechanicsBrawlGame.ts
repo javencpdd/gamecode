@@ -1,4 +1,4 @@
-import { _decorator, AudioClip, AudioSource, Color, Component, EventMouse, EventTouch, Graphics, ImageAsset, input, Input, Label, Node, profiler, resources, Sprite, SpriteFrame, Texture2D, UITransform, Vec2, Vec3, view } from 'cc';
+import { _decorator, AudioClip, AudioSource, Color, Component, EventMouse, EventTouch, Graphics, ImageAsset, input, Input, Label, Node, profiler, ResolutionPolicy, resources, screen, Sprite, SpriteFrame, Texture2D, UITransform, Vec2, Vec3, view } from 'cc';
 
 const { ccclass } = _decorator;
 
@@ -191,6 +191,7 @@ export class MechanicsBrawlGame extends Component {
     private currentBgm: AudioKey | null = null;
     private characterSpriteFrames: Array<SpriteFrame | null> = [null, null];
 
+    private viewResolutionMode: ClientLayoutMode | null = null;
     private layoutMode: ClientLayoutMode = 'portrait';
     private layoutScale = 1;
     private designW = 720;
@@ -218,6 +219,7 @@ export class MechanicsBrawlGame extends Component {
     };
 
     onLoad() {
+        this.configureSharpView();
         this.node.removeAllChildren();
         this.canvas = this.node.getComponent(UITransform) || this.node.addComponent(UITransform);
         this.canvas.setContentSize(this.designW, this.designH);
@@ -413,11 +415,22 @@ export class MechanicsBrawlGame extends Component {
         return label;
     }
 
+    private configureSharpView() {
+        view.resizeWithBrowserSize(true);
+        view.enableRetina(true);
+    }
+
     private applyClientLayout(force = false) {
-        const visible = view.getVisibleSize();
-        const nextMode: ClientLayoutMode = visible.width >= visible.height ? 'landscape' : 'portrait';
+        const windowSize = screen.windowSize;
+        const currentVisible = view.getVisibleSize();
+        const windowW = Math.max(1, windowSize.width || currentVisible.width || 720);
+        const windowH = Math.max(1, windowSize.height || currentVisible.height || 1280);
+        const nextMode: ClientLayoutMode = windowW >= windowH ? 'landscape' : 'portrait';
         const baseW = nextMode === 'landscape' ? 1280 : 720;
         const baseH = nextMode === 'landscape' ? 720 : 1280;
+        this.applyDesignResolution(nextMode, baseW, baseH);
+
+        const visible = view.getVisibleSize();
         const visibleW = Math.max(1, visible.width || baseW);
         const visibleH = Math.max(1, visible.height || baseH);
         const nextScale = Math.max(0.01, Math.min(visibleW / baseW, visibleH / baseH));
@@ -446,6 +459,15 @@ export class MechanicsBrawlGame extends Component {
         this.resizeLayoutNodes();
         this.applyLabelLayout();
         this.clampFightersToArena();
+    }
+
+    private applyDesignResolution(mode: ClientLayoutMode, baseW: number, baseH: number) {
+        if (this.viewResolutionMode === mode) {
+            return;
+        }
+        const policy = mode === 'portrait' ? ResolutionPolicy.FIXED_WIDTH : ResolutionPolicy.FIXED_HEIGHT;
+        view.setDesignResolutionSize(baseW, baseH, policy);
+        this.viewResolutionMode = mode;
     }
 
     private scaled(value: number) {
@@ -557,7 +579,12 @@ export class MechanicsBrawlGame extends Component {
     }
 
     private scaledFont(size: number) {
-        return Math.max(8, Math.round(size * this.layoutScale));
+        const minReadableSize = this.layoutMode === 'portrait' ? 11 : 9;
+        return Math.max(minReadableSize, Math.round(size * this.layoutScale));
+    }
+
+    private strokeWidth(width: number) {
+        return Math.max(1, Math.round(width * this.layoutScale));
     }
 
     private clampFightersToArena() {
@@ -1793,7 +1820,7 @@ export class MechanicsBrawlGame extends Component {
         }
 
         g.strokeColor = new Color(112, 145, 184, 255);
-        g.lineWidth = 3;
+        g.lineWidth = this.strokeWidth(3);
         g.rect(ar.x, ar.y, ar.w, ar.h);
         g.stroke();
     }
@@ -1832,7 +1859,7 @@ export class MechanicsBrawlGame extends Component {
 
     private drawGrid(g: Graphics, ar: RectLike) {
         g.strokeColor = new Color(53, 72, 96, 255);
-        g.lineWidth = 1;
+        g.lineWidth = this.strokeWidth(1);
         for (let xM = Math.ceil(this.arenaM.x); xM <= this.arenaM.x + this.arenaM.w; xM += 1) {
             const x = xM * this.pxPerM;
             g.moveTo(x, ar.y);
@@ -1846,7 +1873,7 @@ export class MechanicsBrawlGame extends Component {
         g.stroke();
 
         g.strokeColor = new Color(135, 154, 181, 120);
-        g.lineWidth = 2;
+        g.lineWidth = this.strokeWidth(2);
         g.moveTo(ar.x, 0);
         g.lineTo(ar.x + ar.w, 0);
         g.moveTo(0, ar.y);
@@ -1862,19 +1889,19 @@ export class MechanicsBrawlGame extends Component {
             g.circle(p.x, p.y, r);
             g.fill();
             g.strokeColor = new Color(field.color.r, field.color.g, field.color.b, 150);
-            g.lineWidth = 2;
+            g.lineWidth = this.strokeWidth(2);
             g.circle(p.x, p.y, r);
             g.stroke();
 
             if (field.type === 'wind') {
                 g.strokeColor = new Color(170, 239, 255, 220);
-                g.lineWidth = 4;
+                g.lineWidth = this.strokeWidth(4);
                 g.moveTo(p.x - field.direction.x * this.scaled(28), p.y - field.direction.y * this.scaled(28));
                 g.lineTo(p.x + field.direction.x * this.scaled(52), p.y + field.direction.y * this.scaled(52));
                 g.stroke();
             } else if (field.type === 'charge') {
                 g.strokeColor = field.sourceChargeC >= 0 ? new Color(255, 224, 102, 235) : new Color(145, 196, 255, 235);
-                g.lineWidth = 4;
+                g.lineWidth = this.strokeWidth(4);
                 g.circle(p.x, p.y, this.scaled(15));
                 g.stroke();
                 g.moveTo(p.x, p.y);
@@ -1896,7 +1923,7 @@ export class MechanicsBrawlGame extends Component {
                 g.rect(p.x - w / 2, p.y - h / 2, w, h);
                 g.fill();
                 g.strokeColor = new Color(235, 229, 210, 255);
-                g.lineWidth = 1.5;
+                g.lineWidth = this.strokeWidth(1.5);
                 g.rect(p.x - w / 2, p.y - h / 2, w, h);
                 g.stroke();
             }
@@ -1921,7 +1948,7 @@ export class MechanicsBrawlGame extends Component {
         }
 
         g.strokeColor = this.currentPlayer === index && this.phase === 'planning' ? new Color(255, 232, 125, 255) : new Color(230, 236, 246, 155);
-        g.lineWidth = this.currentPlayer === index && this.phase === 'planning' ? 4 : 2;
+        g.lineWidth = this.strokeWidth(this.currentPlayer === index && this.phase === 'planning' ? 4 : 2);
         g.circle(p.x, p.y, r + this.scaled(3));
         g.stroke();
 
@@ -1931,7 +1958,7 @@ export class MechanicsBrawlGame extends Component {
             const fx = force.x / forceLen;
             const fy = force.y / forceLen;
             g.strokeColor = new Color(255, 248, 190, 210);
-            g.lineWidth = 3;
+            g.lineWidth = this.strokeWidth(3);
             g.moveTo(p.x, p.y);
             g.lineTo(p.x + fx * this.scaled(Math.min(82, forceLen * 42)), p.y + fy * this.scaled(Math.min(82, forceLen * 42)));
             g.stroke();
@@ -1940,7 +1967,7 @@ export class MechanicsBrawlGame extends Component {
         const speed = Math.hypot(fighter.velMps.x, fighter.velMps.y);
         if (speed > 0.05) {
             g.strokeColor = new Color(255, 255, 255, 130);
-            g.lineWidth = 2;
+            g.lineWidth = this.strokeWidth(2);
             g.moveTo(p.x, p.y);
             g.lineTo(p.x + fighter.velMps.x * this.scaled(28), p.y + fighter.velMps.y * this.scaled(28));
             g.stroke();
@@ -1948,7 +1975,7 @@ export class MechanicsBrawlGame extends Component {
 
         if (Math.abs(stats.chargeC) > 0.01) {
             g.strokeColor = stats.chargeC > 0 ? new Color(255, 229, 116, 180) : new Color(135, 194, 255, 180);
-            g.lineWidth = 2;
+            g.lineWidth = this.strokeWidth(2);
             g.circle(p.x, p.y, r + this.scaled(9));
             g.stroke();
         }
@@ -2008,7 +2035,7 @@ export class MechanicsBrawlGame extends Component {
     private drawLightning(g: Graphics, from: Vec2, to: Vec2, color: Color) {
         const segments = 6;
         g.strokeColor = color;
-        g.lineWidth = 2;
+        g.lineWidth = this.strokeWidth(2);
         for (let i = 0; i <= segments; i++) {
             const t = i / segments;
             const x = from.x + (to.x - from.x) * t;
@@ -2035,7 +2062,7 @@ export class MechanicsBrawlGame extends Component {
         for (const intent of this.pendingIntents) {
             const p = this.worldToPx(intent.positionM);
             g.strokeColor = new Color(255, 255, 255, 90);
-            g.lineWidth = 2;
+            g.lineWidth = this.strokeWidth(2);
             g.circle(p.x, p.y, this.scaled(14));
             g.stroke();
             if (intent.card.kind === 'windField') {
@@ -2054,7 +2081,7 @@ export class MechanicsBrawlGame extends Component {
             const p = this.worldToPx(draft.positionM);
             const dir = this.angleToVector(draft.angleDeg);
             g.strokeColor = new Color(255, 226, 126, 210);
-            g.lineWidth = 3;
+            g.lineWidth = this.strokeWidth(3);
             g.circle(p.x, p.y, (draft.card.values.radiusM || 2) * this.pxPerM);
             g.moveTo(p.x, p.y);
             g.lineTo(p.x + dir.x * this.scaled(72), p.y + dir.y * this.scaled(72));
@@ -2065,7 +2092,7 @@ export class MechanicsBrawlGame extends Component {
             const card = this.currentHand()[this.selectedCard];
             const p = this.aimPoint;
             g.strokeColor = new Color(card.color.r, card.color.g, card.color.b, 160);
-            g.lineWidth = 2;
+            g.lineWidth = this.strokeWidth(2);
             const radiusM = card.values.radiusM || 0.35;
             g.circle(p.x, p.y, radiusM * this.pxPerM);
             g.stroke();
@@ -2136,7 +2163,7 @@ export class MechanicsBrawlGame extends Component {
                 }
 
                 g.strokeColor = !card ? new Color(55, 66, 84, 255) : selected ? new Color(255, 247, 209, 255) : new Color(88, 105, 130, 255);
-                g.lineWidth = selected ? 3 : 1.5;
+                g.lineWidth = this.strokeWidth(selected ? 3 : 1.5);
                 g.rect(r.x, r.y, r.w, r.h);
                 g.stroke();
             }
@@ -2154,7 +2181,7 @@ export class MechanicsBrawlGame extends Component {
                 g.rect(x + this.scaled(4), y + this.cardH - this.scaled(10), this.cardW - this.scaled(8), this.scaled(6));
                 g.fill();
                 g.strokeColor = this.inArenaPx(this.aimPoint) ? new Color(255, 247, 209, 255) : new Color(255, 142, 142, 255);
-                g.lineWidth = 3;
+                g.lineWidth = this.strokeWidth(3);
                 g.rect(x, y, this.cardW, this.cardH);
                 g.stroke();
             }
@@ -2175,7 +2202,7 @@ export class MechanicsBrawlGame extends Component {
         g.rect(panel.x, panel.y, panel.w, panel.h);
         g.fill();
         g.strokeColor = new Color(175, 197, 228, 255);
-        g.lineWidth = 2;
+        g.lineWidth = this.strokeWidth(2);
         g.rect(panel.x, panel.y, panel.w, panel.h);
         g.stroke();
 
@@ -2184,13 +2211,13 @@ export class MechanicsBrawlGame extends Component {
         g.circle(center.x, center.y, this.scaled(62));
         g.fill();
         g.strokeColor = new Color(111, 138, 178, 255);
-        g.lineWidth = 2;
+        g.lineWidth = this.strokeWidth(2);
         g.circle(center.x, center.y, this.scaled(62));
         g.stroke();
 
         const dir = this.angleToVector(draft.angleDeg);
         g.strokeColor = new Color(255, 226, 126, 255);
-        g.lineWidth = 4;
+        g.lineWidth = this.strokeWidth(4);
         g.moveTo(center.x, center.y);
         g.lineTo(center.x + dir.x * this.scaled(54), center.y + dir.y * this.scaled(54));
         g.stroke();
@@ -2202,7 +2229,7 @@ export class MechanicsBrawlGame extends Component {
         g.rect(this.scaled(50), this.scaled(-6), this.scaled(136), this.scaled(42));
         g.fill();
         g.strokeColor = new Color(255, 226, 126, 210);
-        g.lineWidth = 2;
+        g.lineWidth = this.strokeWidth(2);
         g.rect(this.scaled(50), this.scaled(-6), this.scaled(136), this.scaled(42));
         g.stroke();
 
@@ -2222,7 +2249,7 @@ export class MechanicsBrawlGame extends Component {
         g.rect(x, y, w, h);
         g.fill();
         g.strokeColor = active ? new Color(255, 232, 125, 255) : new Color(88, 105, 130, 255);
-        g.lineWidth = active ? 3 : 1.5;
+        g.lineWidth = this.strokeWidth(active ? 3 : 1.5);
         g.rect(x, y, w, h);
         g.stroke();
     }
@@ -2232,7 +2259,7 @@ export class MechanicsBrawlGame extends Component {
         g.rect(rect.x, rect.y, rect.w, rect.h);
         g.fill();
         g.strokeColor = enabled ? new Color(178, 193, 214, 255) : new Color(91, 103, 118, 255);
-        g.lineWidth = 2;
+        g.lineWidth = this.strokeWidth(2);
         g.rect(rect.x, rect.y, rect.w, rect.h);
         g.stroke();
     }
@@ -2251,7 +2278,7 @@ export class MechanicsBrawlGame extends Component {
         g.rect(x, y, size, size);
         g.fill();
         g.strokeColor = new Color(34, 45, 62, 255);
-        g.lineWidth = 4;
+        g.lineWidth = this.strokeWidth(4);
         g.rect(x, y, size, size);
         g.stroke();
 
@@ -2272,7 +2299,7 @@ export class MechanicsBrawlGame extends Component {
 
     private drawPlusMinus(g: Graphics, x: number, y: number, positive: boolean) {
         g.strokeColor = positive ? new Color(255, 235, 120, 255) : new Color(145, 196, 255, 255);
-        g.lineWidth = 3;
+        g.lineWidth = this.strokeWidth(3);
         g.moveTo(x - this.scaled(7), y);
         g.lineTo(x + this.scaled(7), y);
         if (positive) {
