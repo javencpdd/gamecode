@@ -66,6 +66,8 @@ interface CardIntent {
     positionM: Vec2;
     direction: Vec2;
     targetWallId?: number;
+    fieldStrengthN?: number;
+    sourceChargeC?: number;
     summary: string;
 }
 
@@ -95,6 +97,9 @@ interface WallBody {
     permanent: boolean;
     breakable: boolean;
     wallFriction: number;
+    blocksX: number;
+    blocksY: number;
+    blockSizeM: number;
     color: Color;
 }
 
@@ -107,6 +112,19 @@ interface AttributeEffect {
     chargeDeltaC: number;
     remainingSec: number;
     label: string;
+}
+
+interface FieldConfigDraft {
+    owner: number;
+    handIndex: number;
+    card: CardDef;
+    positionM: Vec2;
+    angleDeg: number;
+    valueN: number;
+    minN: number;
+    maxN: number;
+    stepN: number;
+    chargeSign: number;
 }
 
 @ccclass('MechanicsBrawlGame')
@@ -133,6 +151,7 @@ export class MechanicsBrawlGame extends Component {
     private pressedCardIndex = -1;
     private pointerDownPoint = new Vec2();
     private aimPoint = new Vec2();
+    private fieldConfigDraft: FieldConfigDraft | null = null;
 
     private roundWins = [0, 0];
     private roundNumber = 1;
@@ -167,6 +186,7 @@ export class MechanicsBrawlGame extends Component {
     private readonly cardsDrawnPerTurn = 2;
     private readonly maxDiscardsPerTurn = 2;
     private readonly maxActionTurns = 30;
+    private readonly wallUnitM = 0.4;
     private readonly cardW = 112;
     private readonly cardH = 70;
     private readonly cardGap = 10;
@@ -238,6 +258,18 @@ export class MechanicsBrawlGame extends Component {
         this.makeLabel('reset', 571, 311, 88, 28, 15, new Color(238, 244, 255, 255));
         this.makeLabel('action', 571, 265, 88, 28, 15, new Color(238, 244, 255, 255));
         this.makeLabel('discard', 457, 265, 88, 28, 15, new Color(238, 244, 255, 255));
+        this.makeLabel('name_0', 0, 0, 190, 22, 12, new Color(206, 233, 255, 255));
+        this.makeLabel('name_1', 0, 0, 190, 22, 12, new Color(255, 218, 218, 255));
+        this.makeLabel('configTitle', 0, 86, 420, 24, 16, new Color(248, 252, 255, 255));
+        this.makeLabel('configAngle', -102, 25, 160, 22, 12, new Color(222, 235, 255, 255));
+        this.makeLabel('configValue', 102, 25, 160, 22, 12, new Color(255, 231, 158, 255));
+        this.makeLabel('configAngleMinus', -184, -49, 44, 28, 15, new Color(238, 244, 255, 255));
+        this.makeLabel('configAnglePlus', -58, -49, 44, 28, 15, new Color(238, 244, 255, 255));
+        this.makeLabel('configValueMinus', 36, -49, 44, 28, 15, new Color(238, 244, 255, 255));
+        this.makeLabel('configValuePlus', 162, -49, 44, 28, 15, new Color(238, 244, 255, 255));
+        this.makeLabel('configSign', 102, -83, 102, 26, 13, new Color(238, 244, 255, 255));
+        this.makeLabel('configCancel', -82, -112, 88, 28, 14, new Color(238, 244, 255, 255));
+        this.makeLabel('configConfirm', 82, -112, 88, 28, 14, new Color(238, 244, 255, 255));
 
         for (let i = 0; i < this.maxHandSize; i++) {
             const r = this.cardRect(i);
@@ -281,12 +313,12 @@ export class MechanicsBrawlGame extends Component {
         });
 
         const basic = [
-            c('basic_wind', '轻风标记', '轻风\n标记', 'basic', 'windField', 'arena', 2, new Color(118, 216, 255, 255), '放置弱方向风场。回合末结算时，范围内角色受到固定方向小作用力。', '半径 2.4 m，作用力 0.45 N，持续 2 s', { radiusM: 2.4, forceN: 0.45 }),
-            c('basic_charge', '静电标记', '静电\n标记', 'basic', 'chargeField', 'arena', 3, new Color(255, 214, 95, 255), '放置固定电荷点。源电荷正负由当前玩家决定，数值偏小。', '半径 3.0 m，最大作用力 0.65 N，源电荷 1.2 C，持续 3 s', { radiusM: 3.0, forceN: 0.65, chargeC: 1.2 }),
-            c('rough_zone', '粗糙地带', '粗糙\n地带', 'basic', 'frictionZone', 'arena', 3, new Color(166, 213, 122, 255), '放置摩擦区。角色经过时速度衰减更明显。', '半径 2.1 m，摩擦系数 +0.10，持续 3 s', { radiusM: 2.1, frictionDelta: 0.10 }),
-            c('smooth_zone', '光滑地带', '光滑\n地带', 'basic', 'frictionZone', 'arena', 2, new Color(94, 229, 214, 255), '放置低摩擦冰面。视觉偏蓝并带雪花反馈。', '半径 2.2 m，摩擦系数 -0.06，持续 2 s', { radiusM: 2.2, frictionDelta: -0.06 }),
-            c('temp_wall', '临时隔板', '临时\n隔板', 'basic', 'wallCreate', 'arena', 3, new Color(190, 144, 255, 255), '放置固定形状刚性墙体。墙体不反弹，只吸收法向速度。', '尺寸 1.6 m x 0.18 m，耐久 2，持续 3 s', { wallW: 1.6, wallH: 0.18, hp: 2 }),
-            c('crack_hammer', '裂解锤', '裂解\n锤', 'basic', 'wallBreak', 'wall', 0, new Color(255, 156, 101, 255), '选择一段可破坏墙体。回合末扣除耐久。', '墙体耐久 -2，结算前一次性', { damage: 2 }),
+            c('basic_wind', '轻风标记', '轻风\n标记', 'basic', 'windField', 'arena', 3, new Color(118, 216, 255, 255), '放置方向风场。拖放后先打开转盘和数值框，确认方向和作用力大小。', '半径 2.6 m，作用力 0.30-1.60 N，持续 3 s', { radiusM: 2.6, forceN: 0.85, minForceN: 0.30, maxForceN: 1.60, forceStepN: 0.05 }),
+            c('basic_charge', '静电标记', '静电\n标记', 'basic', 'chargeField', 'arena', 4, new Color(255, 214, 95, 255), '放置固定电荷点。拖放后可设置偏置方向、最大作用力和正负极性。', '半径 3.2 m，最大作用力 0.40-1.80 N，源电荷 1.4 C，持续 4 s', { radiusM: 3.2, forceN: 1.05, minForceN: 0.40, maxForceN: 1.80, forceStepN: 0.05, chargeC: 1.4 }),
+            c('rough_zone', '粗糙地带', '粗糙\n地带', 'basic', 'frictionZone', 'arena', 4, new Color(166, 213, 122, 255), '放置摩擦区。角色经过时速度衰减更明显。', '半径 2.1 m，摩擦系数 +0.10，持续 4 s', { radiusM: 2.1, frictionDelta: 0.10 }),
+            c('smooth_zone', '光滑地带', '光滑\n地带', 'basic', 'frictionZone', 'arena', 3, new Color(94, 229, 214, 255), '放置低摩擦冰面。视觉偏蓝并带雪花反馈。', '半径 2.2 m，摩擦系数 -0.06，持续 3 s', { radiusM: 2.2, frictionDelta: -0.06 }),
+            c('temp_wall', '方块筑墙', '方块\n筑墙', 'basic', 'wallCreate', 'arena', 5, new Color(190, 144, 255, 255), '用最小正方形墙体单位建造 1 格墙。墙体不反弹，所有墙体都可被破坏。', '1 个 0.4 m x 0.4 m 方块，耐久 1，持续 5 s', { blocks: 1, hp: 1 }),
+            c('crack_hammer', '方块拆除', '方块\n拆除', 'basic', 'wallBreak', 'wall', 0, new Color(255, 156, 101, 255), '选择墙体，按最小正方形单位拆除。回合末扣除 1 格耐久。', '墙体耐久 -1 格，结算前一次性', { damage: 1 }),
             c('shoe_spikes', '稳定鞋钉', '稳定\n鞋钉', 'basic', 'frictionBuff', 'self', 2, new Color(171, 238, 147, 255), '临时提高自身摩擦系数，使角色更容易停住。', '自身摩擦系数 +0.08，持续 2 s', { frictionDelta: 0.08 }),
             c('mass_light', '轻量校准', '轻量\n校准', 'basic', 'massBuff', 'self', 2, new Color(139, 207, 255, 255), '临时降低自身质量，更容易被场源影响。', '自身质量 -0.25 kg，持续 2 s', { massDeltaKg: -0.25 }),
             c('mass_heavy', '重量校准', '重量\n校准', 'basic', 'massBuff', 'self', 2, new Color(255, 201, 111, 255), '临时提高自身质量，更难被弱场源推动。', '自身质量 +0.35 kg，持续 2 s', { massDeltaKg: 0.35 }),
@@ -301,14 +333,14 @@ export class MechanicsBrawlGame extends Component {
 
         const newton = [
             c('newton_inertia', '惯性锁定', '惯性\n锁定', 'newton', 'massBuff', 'self', 2, new Color(93, 164, 255, 255), '牛顿专属。提高自身质量和抗扰动能力。', '自身质量 +0.8 kg，持续 2 s', { massDeltaKg: 0.8 }),
-            c('newton_board', '牛顿挡板', '牛顿\n挡板', 'newton', 'wallCreate', 'arena', 4, new Color(111, 145, 210, 255), '牛顿专属。生成更厚的短墙，控制路线。', '尺寸 1.8 m x 0.20 m，耐久 3，持续 4 s', { wallW: 1.8, wallH: 0.2, hp: 3 }),
-            c('newton_break', '支点破坏', '支点\n破坏', 'newton', 'wallBreak', 'wall', 0, new Color(255, 150, 82, 255), '牛顿专属。重击可破坏墙体。', '墙体耐久 -3，结算前一次性', { damage: 3 }),
-            c('newton_damping', '静止参考系', '静止\n参考', 'newton', 'dampingZone', 'arena', 2, new Color(157, 213, 255, 255), '牛顿专属。放置阻尼区，使范围内速度衰减更强。', '半径 2.2 m，阻尼 +0.16，持续 2 s', { radiusM: 2.2, frictionDelta: 0.16 }),
+            c('newton_board', '牛顿砖列', '牛顿\n砖列', 'newton', 'wallCreate', 'arena', 5, new Color(111, 145, 210, 255), '牛顿专属。一次建造 2 个连续方块墙体单位。', '2 个 0.4 m 方块，耐久 2，持续 5 s', { blocks: 2, hp: 2 }),
+            c('newton_break', '支点拆解', '支点\n拆解', 'newton', 'wallBreak', 'wall', 0, new Color(255, 150, 82, 255), '牛顿专属。按方块单位拆解墙体。', '墙体耐久 -2 格，结算前一次性', { damage: 2 }),
+            c('newton_damping', '静止参考系', '静止\n参考', 'newton', 'dampingZone', 'arena', 3, new Color(157, 213, 255, 255), '牛顿专属。放置阻尼区，使范围内速度衰减更强。', '半径 2.2 m，阻尼 +0.16，持续 3 s', { radiusM: 2.2, frictionDelta: 0.16 }),
         ];
 
         const maxwell = [
-            c('maxwell_charge', '微型电荷点', '微型\n电荷', 'maxwell', 'chargeField', 'arena', 3, new Color(255, 118, 126, 255), '麦克斯韦专属。放置更强但仍偏小的电荷点。', '半径 3.2 m，最大作用力 0.80 N，源电荷 1.5 C，持续 3 s', { radiusM: 3.2, forceN: 0.8, chargeC: 1.5 }),
-            c('maxwell_wind', '风矢量', '风\n矢量', 'maxwell', 'windField', 'arena', 2, new Color(103, 232, 218, 255), '麦克斯韦专属。通过鼠标方向设置风场。', '半径 2.6 m，作用力 0.65 N，持续 2 s', { radiusM: 2.6, forceN: 0.65 }),
+            c('maxwell_charge', '微型电荷点', '微型\n电荷', 'maxwell', 'chargeField', 'arena', 4, new Color(255, 118, 126, 255), '麦克斯韦专属。放置更强电荷点，并通过参数面板限制最大作用力。', '半径 3.4 m，最大作用力 0.50-2.20 N，源电荷 1.7 C，持续 4 s', { radiusM: 3.4, forceN: 1.25, minForceN: 0.50, maxForceN: 2.20, forceStepN: 0.05, chargeC: 1.7 }),
+            c('maxwell_wind', '风矢量', '风\n矢量', 'maxwell', 'windField', 'arena', 3, new Color(103, 232, 218, 255), '麦克斯韦专属。拖放后通过转盘设置方向，通过数字框设置大小。', '半径 2.8 m，作用力 0.40-2.00 N，持续 3 s', { radiusM: 2.8, forceN: 1.10, minForceN: 0.40, maxForceN: 2.00, forceStepN: 0.05 }),
             c('maxwell_flip', '电荷翻转', '电荷\n翻转', 'maxwell', 'chargeFlip', 'opponent', 0, new Color(255, 143, 225, 255), '麦克斯韦专属。把对手电荷取反，改变电磁方向。', '对手电荷取反，结算前一次性，范围 -5 C 到 5 C', { chargeMultiplier: -1 }),
             c('maxwell_smooth', '等势线', '等势\n线', 'maxwell', 'frictionZone', 'arena', 2, new Color(158, 184, 255, 255), '麦克斯韦专属。放置轻微低摩擦区，辅助场源组合。', '半径 2.3 m，摩擦系数 -0.03，持续 2 s', { radiusM: 2.3, frictionDelta: -0.03 }),
         ];
@@ -331,6 +363,7 @@ export class MechanicsBrawlGame extends Component {
         this.fields = [];
         this.walls = [];
         this.attrEffects = [];
+        this.fieldConfigDraft = null;
         this.selectedCard = -1;
         this.cardInfoText = '';
         this.turnTimer = 120;
@@ -361,6 +394,7 @@ export class MechanicsBrawlGame extends Component {
         this.pendingIntents = [];
         this.fields = [];
         this.attrEffects = [];
+        this.fieldConfigDraft = null;
         this.selectedCard = -1;
         this.cardInfoText = '';
         this.createInitialFighters();
@@ -372,7 +406,7 @@ export class MechanicsBrawlGame extends Component {
     private createInitialFighters() {
         this.fighters = [
             {
-                name: '牛顿',
+                name: '艾萨克·牛顿',
                 posM: new Vec2(-4.6, 0),
                 velMps: new Vec2(),
                 radiusM: 0.32,
@@ -382,7 +416,7 @@ export class MechanicsBrawlGame extends Component {
                 color: new Color(66, 163, 255, 255),
             },
             {
-                name: '麦克斯韦',
+                name: '詹姆斯·麦克斯韦',
                 posM: new Vec2(4.6, 0),
                 velMps: new Vec2(),
                 radiusM: 0.30,
@@ -397,10 +431,10 @@ export class MechanicsBrawlGame extends Component {
 
     private createInitialWalls() {
         this.walls = [];
-        this.addWall(-3.2, 0, 0.22, 1.8, -1, 99, 0, true, false);
-        this.addWall(3.2, 0, 0.22, 1.8, -1, 99, 0, true, false);
-        this.addWall(0, 1.9, 1.8, 0.22, -1, 99, 0, true, false);
-        this.addWall(0, -1.9, 1.8, 0.22, -1, 99, 0, true, false);
+        this.addWall(-3.2, 0, 0.4, 2.0, -1, 5, 0, true, true);
+        this.addWall(3.2, 0, 0.4, 2.0, -1, 5, 0, true, true);
+        this.addWall(0, 1.9, 2.0, 0.4, -1, 5, 0, true, true);
+        this.addWall(0, -1.9, 2.0, 0.4, -1, 5, 0, true, true);
     }
 
     private dealOpeningHands() {
@@ -421,6 +455,7 @@ export class MechanicsBrawlGame extends Component {
         this.selectedCard = -1;
         this.draggingCard = false;
         this.pressedCardIndex = -1;
+        this.fieldConfigDraft = null;
         const drawn = this.drawTurnCards(this.currentPlayer);
         const intro = prefix ? `${prefix} ` : '';
         this.message = `${intro}${this.fighters[this.currentPlayer].name} 抽 ${drawn} 张。出牌只进入计划队列，点击结束后才掷骰并统一结算 1 秒。`;
@@ -432,7 +467,40 @@ export class MechanicsBrawlGame extends Component {
 
     private drawCardForPlayer(playerIndex: number) {
         const deck = this.decks[playerIndex];
-        return deck[Math.floor(Math.random() * deck.length)];
+        const hand = this.hands[playerIndex] || [];
+        let totalWeight = 0;
+        const weighted = deck.map((card) => {
+            let weight = this.cardDrawWeight(card);
+            if ((card.kind === 'wallCreate' || card.kind === 'wallBreak') && hand.some((inHand) => inHand.kind === card.kind)) {
+                weight *= 0.35;
+            }
+            totalWeight += weight;
+            return { card, weight };
+        });
+        let roll = Math.random() * totalWeight;
+        for (const item of weighted) {
+            roll -= item.weight;
+            if (roll <= 0) {
+                return item.card;
+            }
+        }
+        return deck[deck.length - 1];
+    }
+
+    private cardDrawWeight(card: CardDef) {
+        if (card.kind === 'wallCreate' || card.kind === 'wallBreak') {
+            return 0.22;
+        }
+        if (card.kind === 'windField' || card.kind === 'chargeField') {
+            return 0.55;
+        }
+        if (card.kind === 'frictionZone' || card.kind === 'dampingZone') {
+            return 0.75;
+        }
+        if (card.family === 'math') {
+            return 0.90;
+        }
+        return 1.30;
     }
 
     private drawTurnCards(playerIndex: number) {
@@ -501,6 +569,10 @@ export class MechanicsBrawlGame extends Component {
             this.message = '基础数学牌每个行动回合最多计划 1 张，避免数值连锁过强。';
             return;
         }
+        if (this.isConfigurableFieldCard(card)) {
+            this.openFieldConfig(card, this.selectedCard, positionM, direction);
+            return;
+        }
 
         const intent: CardIntent = {
             id: this.intentId++,
@@ -521,6 +593,166 @@ export class MechanicsBrawlGame extends Component {
         this.pressedCardIndex = -1;
         this.message = `${this.fighters[owner].name} 计划 ${card.name}。尚未生效；结束行动并完成骰子过场后才进入 1 秒结算。`;
         this.playCue('click');
+    }
+
+    private isConfigurableFieldCard(card: CardDef) {
+        return card.kind === 'windField' || card.kind === 'chargeField';
+    }
+
+    private openFieldConfig(card: CardDef, handIndex: number, positionM: Vec2, direction: Vec2) {
+        const angle = this.vectorToAngle(direction);
+        const minN = card.values.minForceN || 0.25;
+        const maxN = card.values.maxForceN || 2.0;
+        const valueN = this.clamp(card.values.forceN || minN, minN, maxN);
+        this.fieldConfigDraft = {
+            owner: this.currentPlayer,
+            handIndex,
+            card,
+            positionM,
+            angleDeg: angle,
+            valueN,
+            minN,
+            maxN,
+            stepN: card.values.forceStepN || 0.05,
+            chargeSign: this.currentPlayer === 0 ? 1 : -1,
+        };
+        this.draggingCard = false;
+        this.pressedCardIndex = -1;
+        this.cardInfoText = this.fieldConfigText();
+        this.message = `${card.name} 参数设置：用转盘设方向，用数字框限制作用力大小，确认后才加入计划队列。`;
+        this.playCue('click');
+    }
+
+    private confirmFieldConfig() {
+        const draft = this.fieldConfigDraft;
+        if (!draft) {
+            return;
+        }
+        const hand = this.hands[draft.owner];
+        if (!hand || hand[draft.handIndex] !== draft.card) {
+            this.fieldConfigDraft = null;
+            this.message = '这张卡已经不在手牌中，场源设置已取消。';
+            return;
+        }
+        const direction = this.angleToVector(draft.angleDeg);
+        const sourceCharge = draft.card.kind === 'chargeField'
+            ? draft.chargeSign * Math.max(0.2, draft.card.values.chargeC || 1)
+            : 0;
+        const intent: CardIntent = {
+            id: this.intentId++,
+            owner: draft.owner,
+            card: draft.card,
+            positionM: this.cloneVec(draft.positionM),
+            direction,
+            fieldStrengthN: draft.valueN,
+            sourceChargeC: sourceCharge,
+            summary: this.intentSummary(draft.card, draft.positionM, direction),
+        };
+        this.pendingIntents.push(intent);
+        hand.splice(draft.handIndex, 1);
+        this.cardsPlannedThisTurn += 1;
+        this.selectedCard = -1;
+        this.fieldConfigDraft = null;
+        this.cardInfoText = this.intentDetails(intent);
+        this.message = `${this.fighters[draft.owner].name} 计划 ${draft.card.name}：方向 ${this.normalizeAngleDeg(this.vectorToAngle(direction)).toFixed(0)} 度，大小 ${draft.valueN.toFixed(2)} N。`;
+        this.playCue('click');
+    }
+
+    private cancelFieldConfig() {
+        this.fieldConfigDraft = null;
+        this.message = '已取消场源参数设置，手牌保留。';
+        this.cardInfoText = '';
+        this.playCue('click');
+    }
+
+    private handleFieldConfigClick(point: Vec2) {
+        const draft = this.fieldConfigDraft;
+        if (!draft) {
+            return false;
+        }
+        if (this.hitRect(point, this.configConfirmRect())) {
+            this.confirmFieldConfig();
+            return true;
+        }
+        if (this.hitRect(point, this.configCancelRect())) {
+            this.cancelFieldConfig();
+            return true;
+        }
+        if (this.hitRect(point, this.configAngleMinusRect())) {
+            draft.angleDeg = this.normalizeAngleDeg(draft.angleDeg - 15);
+            this.cardInfoText = this.fieldConfigText();
+            this.playCue('click');
+            return true;
+        }
+        if (this.hitRect(point, this.configAnglePlusRect())) {
+            draft.angleDeg = this.normalizeAngleDeg(draft.angleDeg + 15);
+            this.cardInfoText = this.fieldConfigText();
+            this.playCue('click');
+            return true;
+        }
+        if (this.hitRect(point, this.configValueMinusRect())) {
+            draft.valueN = this.clamp(draft.valueN - draft.stepN, draft.minN, draft.maxN);
+            this.cardInfoText = this.fieldConfigText();
+            this.playCue('click');
+            return true;
+        }
+        if (this.hitRect(point, this.configValuePlusRect())) {
+            draft.valueN = this.clamp(draft.valueN + draft.stepN, draft.minN, draft.maxN);
+            this.cardInfoText = this.fieldConfigText();
+            this.playCue('click');
+            return true;
+        }
+        if (draft.card.kind === 'chargeField' && this.hitRect(point, this.configSignRect())) {
+            draft.chargeSign *= -1;
+            this.cardInfoText = this.fieldConfigText();
+            this.playCue('electric');
+            return true;
+        }
+
+        const center = this.configTurntableCenter();
+        const dx = point.x - center.x;
+        const dy = point.y - center.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= 68) {
+            draft.angleDeg = this.normalizeAngleDeg(Math.atan2(dy, dx) * 180 / Math.PI);
+            this.cardInfoText = this.fieldConfigText();
+            this.playCue('click');
+            return true;
+        }
+        return this.hitRect(point, this.configPanelRect());
+    }
+
+    private fieldConfigText() {
+        const draft = this.fieldConfigDraft;
+        if (!draft) {
+            return '';
+        }
+        const polarity = draft.card.kind === 'chargeField'
+            ? `｜极性 ${draft.chargeSign > 0 ? '+' : '-'}`
+            : '';
+        return [
+            `${draft.card.name} 参数设置`,
+            `位置 (${draft.positionM.x.toFixed(2)}, ${draft.positionM.y.toFixed(2)}) m｜方向 ${this.normalizeAngleDeg(draft.angleDeg).toFixed(0)} 度${polarity}`,
+            `大小 ${draft.valueN.toFixed(2)} N｜允许范围 ${draft.minN.toFixed(2)}-${draft.maxN.toFixed(2)} N｜步进 ${draft.stepN.toFixed(2)} N`,
+            '确认后才会消耗手牌并进入计划队列；取消会保留手牌。',
+        ].join('\n');
+    }
+
+    private angleToVector(angleDeg: number) {
+        const rad = angleDeg * Math.PI / 180;
+        return new Vec2(Math.cos(rad), Math.sin(rad));
+    }
+
+    private vectorToAngle(value: Vec2) {
+        return this.normalizeAngleDeg(Math.atan2(value.y, value.x) * 180 / Math.PI);
+    }
+
+    private normalizeAngleDeg(value: number) {
+        let angle = value % 360;
+        if (angle < 0) {
+            angle += 360;
+        }
+        return angle;
     }
 
     private endPlanning(reason = '') {
@@ -576,11 +808,11 @@ export class MechanicsBrawlGame extends Component {
 
             switch (card.kind) {
                 case 'windField':
-                    this.addField(owner, 'wind', intent.positionM, intent.direction, card.values.radiusM, card.values.forceN, 0, 0, card.durationSec, card.name, card.color);
+                    this.addField(owner, 'wind', intent.positionM, intent.direction, card.values.radiusM, intent.fieldStrengthN || card.values.forceN, 0, 0, card.durationSec, card.name, card.color);
                     break;
                 case 'chargeField': {
                     const sign = owner === 0 ? 1 : -1;
-                    this.addField(owner, 'charge', intent.positionM, new Vec2(), card.values.radiusM, card.values.forceN, card.values.chargeC * sign, 0, card.durationSec, card.name, card.color);
+                    this.addField(owner, 'charge', intent.positionM, intent.direction, card.values.radiusM, intent.fieldStrengthN || card.values.forceN, intent.sourceChargeC || card.values.chargeC * sign, 0, card.durationSec, card.name, card.color);
                     break;
                 }
                 case 'frictionZone':
@@ -723,6 +955,8 @@ export class MechanicsBrawlGame extends Component {
                 const mag = field.maxForceN * falloff * chargeScale;
                 force.x += nx * mag;
                 force.y += ny * mag;
+                force.x += field.direction.x * mag * 0.20;
+                force.y += field.direction.y * mag * 0.20;
             }
         }
 
@@ -815,53 +1049,55 @@ export class MechanicsBrawlGame extends Component {
     private resolveWallCollisions() {
         for (const fighter of this.fighters) {
             for (const wall of this.walls) {
-                const halfW = wall.sizeM.x / 2;
-                const halfH = wall.sizeM.y / 2;
-                const closestX = this.clamp(fighter.posM.x, wall.centerM.x - halfW, wall.centerM.x + halfW);
-                const closestY = this.clamp(fighter.posM.y, wall.centerM.y - halfH, wall.centerM.y + halfH);
-                const dx = fighter.posM.x - closestX;
-                const dy = fighter.posM.y - closestY;
-                const dist = Math.hypot(dx, dy);
-                if (dist >= fighter.radiusM && dist > 0.0001) {
-                    continue;
-                }
-
-                let nx = 0;
-                let ny = 0;
-                if (dist > 0.0001) {
-                    nx = dx / dist;
-                    ny = dy / dist;
-                } else {
-                    const left = Math.abs(fighter.posM.x - (wall.centerM.x - halfW));
-                    const right = Math.abs((wall.centerM.x + halfW) - fighter.posM.x);
-                    const bottom = Math.abs(fighter.posM.y - (wall.centerM.y - halfH));
-                    const top = Math.abs((wall.centerM.y + halfH) - fighter.posM.y);
-                    const min = Math.min(left, right, bottom, top);
-                    if (min === left) {
-                        nx = -1;
-                    } else if (min === right) {
-                        nx = 1;
-                    } else if (min === bottom) {
-                        ny = -1;
-                    } else {
-                        ny = 1;
+                for (const block of this.wallBlockRects(wall)) {
+                    const halfW = block.size.x / 2;
+                    const halfH = block.size.y / 2;
+                    const closestX = this.clamp(fighter.posM.x, block.center.x - halfW, block.center.x + halfW);
+                    const closestY = this.clamp(fighter.posM.y, block.center.y - halfH, block.center.y + halfH);
+                    const dx = fighter.posM.x - closestX;
+                    const dy = fighter.posM.y - closestY;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist >= fighter.radiusM && dist > 0.0001) {
+                        continue;
                     }
-                }
 
-                const push = fighter.radiusM - dist + 0.002;
-                fighter.posM.x += nx * push;
-                fighter.posM.y += ny * push;
+                    let nx = 0;
+                    let ny = 0;
+                    if (dist > 0.0001) {
+                        nx = dx / dist;
+                        ny = dy / dist;
+                    } else {
+                        const left = Math.abs(fighter.posM.x - (block.center.x - halfW));
+                        const right = Math.abs((block.center.x + halfW) - fighter.posM.x);
+                        const bottom = Math.abs(fighter.posM.y - (block.center.y - halfH));
+                        const top = Math.abs((block.center.y + halfH) - fighter.posM.y);
+                        const min = Math.min(left, right, bottom, top);
+                        if (min === left) {
+                            nx = -1;
+                        } else if (min === right) {
+                            nx = 1;
+                        } else if (min === bottom) {
+                            ny = -1;
+                        } else {
+                            ny = 1;
+                        }
+                    }
 
-                const normalSpeed = fighter.velMps.x * nx + fighter.velMps.y * ny;
-                if (normalSpeed < 0) {
-                    fighter.velMps.x -= normalSpeed * nx;
-                    fighter.velMps.y -= normalSpeed * ny;
+                    const push = fighter.radiusM - dist + 0.002;
+                    fighter.posM.x += nx * push;
+                    fighter.posM.y += ny * push;
+
+                    const normalSpeed = fighter.velMps.x * nx + fighter.velMps.y * ny;
+                    if (normalSpeed < 0) {
+                        fighter.velMps.x -= normalSpeed * nx;
+                        fighter.velMps.y -= normalSpeed * ny;
+                    }
+                    const tangentX = -ny;
+                    const tangentY = nx;
+                    const tangentSpeed = fighter.velMps.x * tangentX + fighter.velMps.y * tangentY;
+                    fighter.velMps.x = tangentX * tangentSpeed * (1 - wall.wallFriction);
+                    fighter.velMps.y = tangentY * tangentSpeed * (1 - wall.wallFriction);
                 }
-                const tangentX = -ny;
-                const tangentY = nx;
-                const tangentSpeed = fighter.velMps.x * tangentX + fighter.velMps.y * tangentY;
-                fighter.velMps.x = tangentX * tangentSpeed * (1 - wall.wallFriction);
-                fighter.velMps.y = tangentY * tangentSpeed * (1 - wall.wallFriction);
             }
         }
     }
@@ -919,7 +1155,7 @@ export class MechanicsBrawlGame extends Component {
             positionM: this.cloneVec(positionM),
             direction: dir,
             radiusM,
-            maxForceN: this.clamp(maxForceN, 0, 2.0),
+            maxForceN: this.clamp(maxForceN, 0, 3.0),
             sourceChargeC: this.clamp(sourceChargeC, -5, 5),
             frictionDelta,
             remainingSec: durationSec,
@@ -929,17 +1165,24 @@ export class MechanicsBrawlGame extends Component {
     }
 
     private addWall(cx: number, cy: number, w: number, h: number, owner: number, hp: number, durationSec: number, permanent: boolean, breakable: boolean) {
+        const blocksX = Math.max(1, Math.round(w / this.wallUnitM));
+        const blocksY = Math.max(1, Math.round(h / this.wallUnitM));
+        const maxBlocks = blocksX * blocksY;
+        const activeBlocks = this.clamp(Math.round(hp), 1, maxBlocks);
         this.walls.push({
             id: this.wallId++,
             owner,
             centerM: new Vec2(cx, cy),
-            sizeM: new Vec2(w, h),
-            hp,
-            maxHp: hp,
+            sizeM: new Vec2(blocksX * this.wallUnitM, blocksY * this.wallUnitM),
+            hp: activeBlocks,
+            maxHp: maxBlocks,
             remainingSec: durationSec,
             permanent,
             breakable,
             wallFriction: 0.25,
+            blocksX,
+            blocksY,
+            blockSizeM: this.wallUnitM,
             color: permanent ? new Color(82, 103, 132, 255) : owner === 0 ? new Color(84, 136, 211, 255) : new Color(180, 78, 102, 255),
         });
     }
@@ -947,8 +1190,9 @@ export class MechanicsBrawlGame extends Component {
     private tryCreateWallFromIntent(intent: CardIntent) {
         const card = intent.card;
         const horizontal = Math.abs(intent.direction.x) >= Math.abs(intent.direction.y);
-        const w = horizontal ? card.values.wallW : card.values.wallH;
-        const h = horizontal ? card.values.wallH : card.values.wallW;
+        const blocks = Math.max(1, Math.round(card.values.blocks || 1));
+        const w = horizontal ? blocks * this.wallUnitM : this.wallUnitM;
+        const h = horizontal ? this.wallUnitM : blocks * this.wallUnitM;
         const center = intent.positionM;
 
         if (!this.isWallPlacementLegal(center, w, h)) {
@@ -962,7 +1206,7 @@ export class MechanicsBrawlGame extends Component {
             this.walls = this.walls.filter((wall) => wall.id !== ownTempWalls[0].id);
         }
 
-        this.addWall(center.x, center.y, w, h, intent.owner, card.values.hp, card.durationSec, false, true);
+        this.addWall(center.x, center.y, w, h, intent.owner, card.values.hp || blocks, card.durationSec, false, true);
         this.playCue('wall');
     }
 
@@ -1030,8 +1274,8 @@ export class MechanicsBrawlGame extends Component {
         if (!field) {
             return;
         }
-        field.maxForceN = this.clamp(field.maxForceN * multiplier, 0.05, 2.0);
-        field.remainingSec = Math.min(5, field.remainingSec + 1);
+        field.maxForceN = this.clamp(field.maxForceN * multiplier, 0.05, 3.0);
+        field.remainingSec = Math.min(6, field.remainingSec + 1);
     }
 
     private findLatestOwnField(owner: number) {
@@ -1050,15 +1294,33 @@ export class MechanicsBrawlGame extends Component {
             if (!wall.breakable) {
                 continue;
             }
-            const dx = Math.max(Math.abs(pointM.x - wall.centerM.x) - wall.sizeM.x / 2, 0);
-            const dy = Math.max(Math.abs(pointM.y - wall.centerM.y) - wall.sizeM.y / 2, 0);
-            const dist = Math.hypot(dx, dy);
-            if (dist < bestDist) {
-                bestDist = dist;
-                best = wall;
+            for (const block of this.wallBlockRects(wall)) {
+                const dx = Math.max(Math.abs(pointM.x - block.center.x) - block.size.x / 2, 0);
+                const dy = Math.max(Math.abs(pointM.y - block.center.y) - block.size.y / 2, 0);
+                const dist = Math.hypot(dx, dy);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = wall;
+                }
             }
         }
         return best;
+    }
+
+    private wallBlockRects(wall: WallBody) {
+        const blocks: Array<{ center: Vec2; size: Vec2 }> = [];
+        const active = Math.max(0, Math.min(wall.hp, wall.maxHp));
+        for (let index = 0; index < active; index++) {
+            const bx = index % wall.blocksX;
+            const by = Math.floor(index / wall.blocksX);
+            const x = wall.centerM.x - wall.sizeM.x / 2 + wall.blockSizeM / 2 + bx * wall.blockSizeM;
+            const y = wall.centerM.y - wall.sizeM.y / 2 + wall.blockSizeM / 2 + by * wall.blockSizeM;
+            blocks.push({
+                center: new Vec2(x, y),
+                size: new Vec2(wall.blockSizeM, wall.blockSizeM),
+            });
+        }
+        return blocks;
     }
 
     private onMouseDown(event: EventMouse) {
@@ -1066,6 +1328,14 @@ export class MechanicsBrawlGame extends Component {
 
         if (this.hitReset(point)) {
             this.resetToStart();
+            return;
+        }
+
+        if (this.fieldConfigDraft) {
+            if (this.handleFieldConfigClick(point)) {
+                return;
+            }
+            this.message = '请先确认或取消场源参数面板。';
             return;
         }
 
@@ -1259,6 +1529,9 @@ export class MechanicsBrawlGame extends Component {
                 g.lineWidth = 4;
                 g.circle(p.x, p.y, 15);
                 g.stroke();
+                g.moveTo(p.x, p.y);
+                g.lineTo(p.x + field.direction.x * 34, p.y + field.direction.y * 34);
+                g.stroke();
                 this.drawPlusMinus(g, p.x, p.y, field.sourceChargeC >= 0);
             }
         }
@@ -1266,23 +1539,17 @@ export class MechanicsBrawlGame extends Component {
 
     private drawWalls(g: Graphics) {
         for (const wall of this.walls) {
-            const p = this.worldToPx(wall.centerM);
-            const w = wall.sizeM.x * this.pxPerM;
-            const h = wall.sizeM.y * this.pxPerM;
-            g.fillColor = wall.color;
-            g.rect(p.x - w / 2, p.y - h / 2, w, h);
-            g.fill();
-            g.strokeColor = wall.breakable ? new Color(235, 229, 210, 255) : new Color(141, 161, 189, 255);
-            g.lineWidth = wall.breakable ? 2 : 1.5;
-            g.rect(p.x - w / 2, p.y - h / 2, w, h);
-            g.stroke();
-
-            if (wall.breakable) {
-                g.strokeColor = new Color(255, 238, 180, 160);
-                g.lineWidth = 2;
-                const ratio = this.clamp(wall.hp / wall.maxHp, 0, 1);
-                g.moveTo(p.x - w / 2, p.y + h / 2 + 5);
-                g.lineTo(p.x - w / 2 + w * ratio, p.y + h / 2 + 5);
+            const blocks = this.wallBlockRects(wall);
+            for (const block of blocks) {
+                const p = this.worldToPx(block.center);
+                const w = block.size.x * this.pxPerM;
+                const h = block.size.y * this.pxPerM;
+                g.fillColor = wall.color;
+                g.rect(p.x - w / 2, p.y - h / 2, w, h);
+                g.fill();
+                g.strokeColor = new Color(235, 229, 210, 255);
+                g.lineWidth = 1.5;
+                g.rect(p.x - w / 2, p.y - h / 2, w, h);
                 g.stroke();
             }
         }
@@ -1396,7 +1663,23 @@ export class MechanicsBrawlGame extends Component {
                 g.moveTo(p.x, p.y);
                 g.lineTo(p.x + intent.direction.x * 46, p.y + intent.direction.y * 46);
                 g.stroke();
+            } else if (intent.card.kind === 'chargeField') {
+                g.moveTo(p.x, p.y);
+                g.lineTo(p.x + intent.direction.x * 34, p.y + intent.direction.y * 34);
+                g.stroke();
             }
+        }
+
+        if (this.fieldConfigDraft) {
+            const draft = this.fieldConfigDraft;
+            const p = this.worldToPx(draft.positionM);
+            const dir = this.angleToVector(draft.angleDeg);
+            g.strokeColor = new Color(255, 226, 126, 210);
+            g.lineWidth = 3;
+            g.circle(p.x, p.y, (draft.card.values.radiusM || 2) * this.pxPerM);
+            g.moveTo(p.x, p.y);
+            g.lineTo(p.x + dir.x * 72, p.y + dir.y * 72);
+            g.stroke();
         }
 
         if (this.draggingCard && this.selectedCard >= 0 && this.inArenaPx(this.aimPoint)) {
@@ -1483,6 +1766,62 @@ export class MechanicsBrawlGame extends Component {
                 g.stroke();
             }
         }
+
+        if (this.fieldConfigDraft) {
+            this.drawFieldConfigPanel(g);
+        }
+    }
+
+    private drawFieldConfigPanel(g: Graphics) {
+        const draft = this.fieldConfigDraft;
+        if (!draft) {
+            return;
+        }
+        const panel = this.configPanelRect();
+        g.fillColor = new Color(16, 24, 36, 246);
+        g.rect(panel.x, panel.y, panel.w, panel.h);
+        g.fill();
+        g.strokeColor = new Color(175, 197, 228, 255);
+        g.lineWidth = 2;
+        g.rect(panel.x, panel.y, panel.w, panel.h);
+        g.stroke();
+
+        const center = this.configTurntableCenter();
+        g.fillColor = new Color(31, 42, 58, 255);
+        g.circle(center.x, center.y, 62);
+        g.fill();
+        g.strokeColor = new Color(111, 138, 178, 255);
+        g.lineWidth = 2;
+        g.circle(center.x, center.y, 62);
+        g.stroke();
+
+        const dir = this.angleToVector(draft.angleDeg);
+        g.strokeColor = new Color(255, 226, 126, 255);
+        g.lineWidth = 4;
+        g.moveTo(center.x, center.y);
+        g.lineTo(center.x + dir.x * 54, center.y + dir.y * 54);
+        g.stroke();
+        g.fillColor = new Color(255, 226, 126, 255);
+        g.circle(center.x + dir.x * 54, center.y + dir.y * 54, 6);
+        g.fill();
+
+        g.fillColor = new Color(31, 42, 58, 255);
+        g.rect(50, -6, 136, 42);
+        g.fill();
+        g.strokeColor = new Color(255, 226, 126, 210);
+        g.lineWidth = 2;
+        g.rect(50, -6, 136, 42);
+        g.stroke();
+
+        this.drawButton(g, this.configAngleMinusRect(), new Color(50, 60, 76, 255), true);
+        this.drawButton(g, this.configAnglePlusRect(), new Color(50, 60, 76, 255), true);
+        this.drawButton(g, this.configValueMinusRect(), new Color(50, 60, 76, 255), true);
+        this.drawButton(g, this.configValuePlusRect(), new Color(50, 60, 76, 255), true);
+        this.drawButton(g, this.configCancelRect(), new Color(62, 54, 63, 255), true);
+        this.drawButton(g, this.configConfirmRect(), new Color(47, 79, 68, 255), true);
+        if (draft.card.kind === 'chargeField') {
+            this.drawButton(g, this.configSignRect(), draft.chargeSign > 0 ? new Color(82, 72, 41, 255) : new Color(42, 60, 84, 255), true);
+        }
     }
 
     private drawPanel(g: Graphics, x: number, y: number, w: number, h: number, color: Color, active: boolean) {
@@ -1563,6 +1902,7 @@ export class MechanicsBrawlGame extends Component {
         this.labels.reset.string = '重开';
         this.labels.action.string = this.primaryLabel();
         this.labels.discard.string = this.phase === 'planning' ? `弃牌 ${this.discardsThisTurn}/${this.maxDiscardsPerTurn}` : '';
+        this.updateNameLabels();
 
         if (this.phase === 'start') {
             this.labels.turn.string = '三局两胜';
@@ -1597,6 +1937,57 @@ export class MechanicsBrawlGame extends Component {
         for (const label of this.cardLabels) {
             label.node.active = this.phase === 'planning';
         }
+        this.updateConfigLabels();
+    }
+
+    private updateNameLabels() {
+        for (let i = 0; i < 2; i++) {
+            const label = this.labels[`name_${i}`];
+            if (!label) {
+                continue;
+            }
+            const active = this.phase !== 'start' && this.phase !== 'firstDice';
+            label.node.active = active;
+            if (!active || !this.fighters[i]) {
+                continue;
+            }
+            const p = this.worldToPx(this.fighters[i].posM);
+            label.node.setPosition(p.x, p.y + this.fighters[i].radiusM * this.pxPerM + 24);
+            label.string = this.fighters[i].name;
+        }
+    }
+
+    private updateConfigLabels() {
+        const keys = [
+            'configTitle',
+            'configAngle',
+            'configValue',
+            'configAngleMinus',
+            'configAnglePlus',
+            'configValueMinus',
+            'configValuePlus',
+            'configSign',
+            'configCancel',
+            'configConfirm',
+        ];
+        const draft = this.fieldConfigDraft;
+        for (const key of keys) {
+            this.labels[key].node.active = !!draft;
+        }
+        if (!draft) {
+            return;
+        }
+        this.labels.configTitle.string = `${draft.card.name} 参数面板`;
+        this.labels.configAngle.string = `方向 ${this.normalizeAngleDeg(draft.angleDeg).toFixed(0)} 度`;
+        this.labels.configValue.string = `${draft.valueN.toFixed(2)} N`;
+        this.labels.configAngleMinus.string = '-15';
+        this.labels.configAnglePlus.string = '+15';
+        this.labels.configValueMinus.string = `-${draft.stepN.toFixed(2)}`;
+        this.labels.configValuePlus.string = `+${draft.stepN.toFixed(2)}`;
+        this.labels.configSign.string = draft.card.kind === 'chargeField' ? `极性 ${draft.chargeSign > 0 ? '+' : '-'}` : '';
+        this.labels.configSign.node.active = draft.card.kind === 'chargeField';
+        this.labels.configCancel.string = '取消';
+        this.labels.configConfirm.string = '确认';
     }
 
     private primaryLabel() {
@@ -1609,7 +2000,7 @@ export class MechanicsBrawlGame extends Component {
     }
 
     private sceneText() {
-        const fields = this.fields.map((field) => `${field.label} ${field.remainingSec}s`).join('；') || '无场源';
+        const fields = this.fields.map((field) => `${field.label} ${field.remainingSec}s ${field.maxForceN > 0 ? field.maxForceN.toFixed(2) + 'N' : ''}`).join('；') || '无场源';
         const pending = this.pendingIntents.map((intent) => intent.card.name).join('、') || '无计划';
         return `地图 12.0 m x 6.8 m；场源：${fields}；墙体 ${this.walls.length}；本回合计划：${pending}`;
     }
@@ -1622,10 +2013,22 @@ export class MechanicsBrawlGame extends Component {
         const force = this.lastForces[index];
         const forceMag = Math.hypot(force.x, force.y);
         const handCount = this.hands[index]?.length || 0;
+        const edge = this.boundaryDistances(index);
         return `${f.name}  局分 ${this.roundWins[index]}  手牌 ${handCount}/${this.maxHandSize}\n` +
             `位置 (${f.posM.x.toFixed(2)}, ${f.posM.y.toFixed(2)}) m  速度 ${speed.toFixed(2)} m/s\n` +
             `质量 ${stats.massKg.toFixed(2)} kg  摩擦 ${stats.friction.toFixed(2)}  电荷 ${stats.chargeC.toFixed(2)} C\n` +
-            `合力 ${forceMag.toFixed(2)} N  动量 ${momentum.toFixed(2)} kg·m/s`;
+            `合力 ${forceMag.toFixed(2)} N  动量 ${momentum.toFixed(2)} kg·m/s\n` +
+            `边距 左${edge.left.toFixed(2)} 右${edge.right.toFixed(2)} 上${edge.top.toFixed(2)} 下${edge.bottom.toFixed(2)} m`;
+    }
+
+    private boundaryDistances(index: number) {
+        const f = this.fighters[index];
+        return {
+            left: f.posM.x - f.radiusM - this.arenaM.x,
+            right: this.arenaM.x + this.arenaM.w - (f.posM.x + f.radiusM),
+            top: this.arenaM.y + this.arenaM.h - (f.posM.y + f.radiusM),
+            bottom: f.posM.y - f.radiusM - this.arenaM.y,
+        };
     }
 
     private hintText() {
@@ -1655,7 +2058,7 @@ export class MechanicsBrawlGame extends Component {
             `${card.name}｜${card.desc}`,
             `类型：${card.family} / ${this.targetText(card.targetMode)}｜生效：结束行动 + 骰子过场后`,
             `持续：${card.durationSec > 0 ? `${card.durationSec} s` : '本次结算前一次性'}｜${card.unitText}`,
-            `边界：质量 0.5-5.0 kg；电荷 -5 到 5 C；摩擦 0.02-0.80；单场源作用力不超过 2.0 N`,
+            `边界：质量 0.5-5.0 kg；电荷 -5 到 5 C；摩擦 0.02-0.80；单场源作用力不超过 3.0 N`,
         ].join('\n');
     }
 
@@ -1681,7 +2084,7 @@ export class MechanicsBrawlGame extends Component {
             case 'wallBreak':
                 return wall ? `将对墙体 #${wall.id} 造成 ${card.values.damage} 点耐久削减。` : '未选中墙体。';
             case 'fieldBoost':
-                return `将强化最近的己方场源，强度乘 ${card.values.multiplier.toFixed(1)}，最高 2.0 N。`;
+                return `将强化最近的己方场源，强度乘 ${card.values.multiplier.toFixed(1)}，最高 3.0 N。`;
             default:
                 return `${this.targetText(card.targetMode)}：${card.unitText}`;
         }
@@ -1827,6 +2230,10 @@ export class MechanicsBrawlGame extends Component {
         return point.x >= r.x && point.x <= r.x + r.w && point.y >= r.y && point.y <= r.y + r.h;
     }
 
+    private hitRect(point: Vec2, rect: RectLike) {
+        return point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h;
+    }
+
     private cardRect(index: number): RectLike {
         const total = this.maxHandSize * this.cardW + (this.maxHandSize - 1) * this.cardGap;
         return {
@@ -1850,5 +2257,41 @@ export class MechanicsBrawlGame extends Component {
 
     private discardRect(): RectLike {
         return { x: 411, y: 246, w: 92, h: 38 };
+    }
+
+    private configPanelRect(): RectLike {
+        return { x: -245, y: -132, w: 490, h: 246 };
+    }
+
+    private configTurntableCenter() {
+        return new Vec2(-122, 12);
+    }
+
+    private configAngleMinusRect(): RectLike {
+        return { x: -206, y: -64, w: 44, h: 30 };
+    }
+
+    private configAnglePlusRect(): RectLike {
+        return { x: -80, y: -64, w: 44, h: 30 };
+    }
+
+    private configValueMinusRect(): RectLike {
+        return { x: 14, y: -64, w: 44, h: 30 };
+    }
+
+    private configValuePlusRect(): RectLike {
+        return { x: 140, y: -64, w: 44, h: 30 };
+    }
+
+    private configSignRect(): RectLike {
+        return { x: 52, y: -96, w: 100, h: 28 };
+    }
+
+    private configCancelRect(): RectLike {
+        return { x: -126, y: -126, w: 88, h: 30 };
+    }
+
+    private configConfirmRect(): RectLike {
+        return { x: 38, y: -126, w: 88, h: 30 };
     }
 }
