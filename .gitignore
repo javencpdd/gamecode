@@ -14,6 +14,7 @@ native
 node_modules/
 cocos-mcp-v1.7.5-all/
 link_cc_mcp/
+cocos-mcp-server/
 #//////////////////////////
 # VSCode
 #//////////////////////////

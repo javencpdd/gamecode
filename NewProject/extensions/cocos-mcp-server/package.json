@@ -2,16 +2,27 @@
     "$schema": "./@types/schema/package/index.json",
     "package_version": 2,
     "name": "cocos-mcp-server",
-    "version": "1.7.5",
+    "version": "1.4.0",
     "author": "LiDaxian",
-    "editor": ">=3.7.0",
+    "editor": ">=3.8.6",
+    "scripts": {
+        "preinstall": "node ./scripts/preinstall.js",
+        "build": "tsc",
+        "watch": "tsc -w"
+    },
     "description": "i18n:cocos-mcp-server.description",
     "main": "./dist/main.js",
     "dependencies": {
-        "@iarna/toml": "^2.2.5",
         "fs-extra": "^11.3.0",
         "uuid": "^9.0.1",
         "vue": "^3.1.4"
+    },
+    "devDependencies": {
+        "@cocos/creator-types": "^3.8.6",
+        "@types/fs-extra": "^9.0.5",
+        "@types/node": "^18.17.1",
+        "@types/uuid": "^9.0.8",
+        "typescript": "^5.8.2"
     },
     "panels": {
         "default": {
@@ -28,7 +39,7 @@
         }
     },
     "contributions": {
-        "menu": [
+                "menu": [
             {
                 "path": "i18n:menu.extension/Cocos MCP Server",
                 "label": "i18n:cocos-mcp-server.open_panel",
@@ -124,96 +135,6 @@
             "getEnabledTools": {
                 "methods": [
                     "getEnabledTools"
-                ]
-            },
-            "get-config-status": {
-                "methods": [
-                    "getConfigStatus"
-                ]
-            },
-            "generate-cli-commands": {
-                "methods": [
-                    "generateCLICommands"
-                ]
-            },
-            "generate-client-config": {
-                "methods": [
-                    "generateClientConfig"
-                ]
-            },
-            "add-to-client": {
-                "methods": [
-                    "addToClient"
-                ]
-            },
-            "remove-from-client": {
-                "methods": [
-                    "removeFromClient"
-                ]
-            },
-            "add-to-all-clients": {
-                "methods": [
-                    "addToAllClients"
-                ]
-            },
-            "remove-from-all-clients": {
-                "methods": [
-                    "removeFromAllClients"
-                ]
-            },
-            "open-config-file": {
-                "methods": [
-                    "openConfigFile"
-                ]
-            },
-            "check-license": {
-                "methods": [
-                    "checkLicense"
-                ]
-            },
-            "activate-license": {
-                "methods": [
-                    "activateLicense"
-                ]
-            },
-            "deactivate-license": {
-                "methods": [
-                    "deactivateLicense"
-                ]
-            },
-            "get-license-info": {
-                "methods": [
-                    "getLicenseInfo"
-                ]
-            },
-            "check-update": {
-                "methods": [
-                    "checkUpdate"
-                ]
-            },
-            "skip-update": {
-                "methods": [
-                    "skipUpdate"
-                ]
-            },
-            "get-machine-id": {
-                "methods": [
-                    "getMachineId"
-                ]
-            },
-            "preview-play": {
-                "methods": [
-                    "default.onPreviewPlay"
-                ]
-            },
-            "preview-stop": {
-                "methods": [
-                    "default.onPreviewStop"
-                ]
-            },
-            "device-removed": {
-                "methods": [
-                    "default.device-removed"
                 ]
             }
         },
