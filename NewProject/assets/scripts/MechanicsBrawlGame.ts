@@ -1,4 +1,4 @@
-import { _decorator, AudioClip, AudioSource, Color, Component, EventMouse, Graphics, input, Input, Label, Node, profiler, resources, UITransform, Vec2, Vec3 } from 'cc';
+import { _decorator, AudioClip, AudioSource, Color, Component, EventMouse, Graphics, ImageAsset, input, Input, Label, Node, profiler, resources, Sprite, SpriteFrame, Texture2D, UITransform, Vec2, Vec3 } from 'cc';
 
 const { ccclass } = _decorator;
 
@@ -133,8 +133,11 @@ export class MechanicsBrawlGame extends Component {
     private canvas!: UITransform;
     private worldG!: Graphics;
     private hudG!: Graphics;
+    private fighterLayer!: Node;
     private labels: Record<string, Label> = {};
     private cardLabels: Label[] = [];
+    private fighterSpriteNodes: Node[] = [];
+    private fighterSprites: Sprite[] = [];
 
     private fighters: Fighter[] = [];
     private commonCards: CardDef[] = [];
@@ -184,6 +187,7 @@ export class MechanicsBrawlGame extends Component {
     private audioClips: Partial<Record<AudioKey, AudioClip>> = {};
     private desiredBgm: AudioKey | null = null;
     private currentBgm: AudioKey | null = null;
+    private characterSpriteFrames: Array<SpriteFrame | null> = [null, null];
 
     private readonly arenaM: RectLike = { x: -6, y: -3.4, w: 12, h: 6.8 };
     private readonly pxPerM = 74;
@@ -253,11 +257,58 @@ export class MechanicsBrawlGame extends Component {
         world.addComponent(UITransform).setContentSize(1280, 720);
         this.worldG = world.addComponent(Graphics);
 
+        this.fighterLayer = new Node('FighterSprites');
+        this.fighterLayer.layer = this.node.layer;
+        this.fighterLayer.setParent(this.node);
+        this.fighterLayer.addComponent(UITransform).setContentSize(1280, 720);
+        this.fighterSpriteNodes = [];
+        this.fighterSprites = [];
+        for (let i = 0; i < 2; i++) {
+            const spriteNode = new Node(`FighterImage_${i}`);
+            spriteNode.layer = this.node.layer;
+            spriteNode.setParent(this.fighterLayer);
+            spriteNode.addComponent(UITransform).setContentSize(64, 64);
+            const sprite = spriteNode.addComponent(Sprite);
+            spriteNode.active = false;
+            this.fighterSpriteNodes.push(spriteNode);
+            this.fighterSprites.push(sprite);
+        }
+        this.loadCharacterSprites();
+
         const hud = new Node('HudCanvas');
         hud.layer = this.node.layer;
         hud.setParent(this.node);
         hud.addComponent(UITransform).setContentSize(1280, 720);
         this.hudG = hud.addComponent(Graphics);
+    }
+
+    private loadCharacterSprites() {
+        const characterPaths = ['characters/N', 'characters/M'];
+        for (let i = 0; i < characterPaths.length; i++) {
+            resources.load(`${characterPaths[i]}/spriteFrame`, SpriteFrame, (err, spriteFrame) => {
+                if (!err && spriteFrame) {
+                    this.setCharacterSpriteFrame(i, spriteFrame);
+                    return;
+                }
+                resources.load(characterPaths[i], ImageAsset, (imageErr, imageAsset) => {
+                    if (imageErr || !imageAsset) {
+                        return;
+                    }
+                    const texture = new Texture2D();
+                    texture.image = imageAsset;
+                    const frame = new SpriteFrame();
+                    frame.texture = texture;
+                    this.setCharacterSpriteFrame(i, frame);
+                });
+            });
+        }
+    }
+
+    private setCharacterSpriteFrame(index: number, spriteFrame: SpriteFrame) {
+        this.characterSpriteFrames[index] = spriteFrame;
+        if (this.fighterSprites[index]) {
+            this.fighterSprites[index].spriteFrame = spriteFrame;
+        }
     }
 
     private createAudioSources() {
@@ -1484,6 +1535,7 @@ export class MechanicsBrawlGame extends Component {
         g.fill();
 
         if (this.phase === 'start') {
+            this.setFighterSpritesActive(false);
             this.drawStartWorld(g);
             return;
         }
@@ -1616,14 +1668,17 @@ export class MechanicsBrawlGame extends Component {
         const stats = this.effectiveStats(index);
         const p = this.worldToPx(fighter.posM);
         const r = fighter.radiusM * this.pxPerM;
+        const hasPortrait = this.updateFighterSprite(index, p, r);
 
         g.fillColor = new Color(0, 0, 0, 90);
         g.circle(p.x + 5, p.y - 7, r + 4);
         g.fill();
 
-        g.fillColor = fighter.color;
-        g.circle(p.x, p.y, r);
-        g.fill();
+        if (!hasPortrait) {
+            g.fillColor = fighter.color;
+            g.circle(p.x, p.y, r);
+            g.fill();
+        }
 
         g.strokeColor = this.currentPlayer === index && this.phase === 'planning' ? new Color(255, 232, 125, 255) : new Color(230, 236, 246, 155);
         g.lineWidth = this.currentPlayer === index && this.phase === 'planning' ? 4 : 2;
@@ -1656,6 +1711,34 @@ export class MechanicsBrawlGame extends Component {
             g.lineWidth = 2;
             g.circle(p.x, p.y, r + 9);
             g.stroke();
+        }
+    }
+
+    private updateFighterSprite(index: number, p: Vec2, r: number) {
+        const node = this.fighterSpriteNodes[index];
+        const sprite = this.fighterSprites[index];
+        const spriteFrame = this.characterSpriteFrames[index];
+        if (!node || !sprite || !spriteFrame || this.phase === 'start') {
+            if (node) {
+                node.active = false;
+            }
+            return false;
+        }
+        node.active = true;
+        node.setPosition(p.x, p.y, 0);
+        const size = r * 2.45;
+        const transform = node.getComponent(UITransform);
+        if (transform) {
+            transform.setContentSize(size, size);
+        }
+        sprite.spriteFrame = spriteFrame;
+        (sprite as any).sizeMode = 0;
+        return true;
+    }
+
+    private setFighterSpritesActive(active: boolean) {
+        for (const node of this.fighterSpriteNodes) {
+            node.active = active;
         }
     }
 
