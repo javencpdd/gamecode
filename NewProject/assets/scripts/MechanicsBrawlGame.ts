@@ -506,6 +506,8 @@ export class MechanicsBrawlGame extends Component {
         this.setScaledLabelBox('configSign', 102, -83, 102, 26, 13);
         this.setScaledLabelBox('configCancel', -82, -112, 88, 28, 14);
         this.setScaledLabelBox('configConfirm', 82, -112, 88, 28, 14);
+        this.setScaledLabelBox('name_0', 0, 0, 190, 22, 12);
+        this.setScaledLabelBox('name_1', 0, 0, 190, 22, 12);
 
         this.applyButtonLabelLayout();
         for (let i = 0; i < this.cardLabels.length; i++) {
@@ -984,7 +986,7 @@ export class MechanicsBrawlGame extends Component {
         const dx = point.x - center.x;
         const dy = point.y - center.y;
         const dist = Math.hypot(dx, dy);
-        if (dist <= 68) {
+        if (dist <= this.scaled(68)) {
             draft.angleDeg = this.normalizeAngleDeg(Math.atan2(dy, dx) * 180 / Math.PI);
             this.cardInfoText = this.fieldConfigText();
             this.playCue('click');
@@ -1677,7 +1679,7 @@ export class MechanicsBrawlGame extends Component {
             return;
         }
         const moved = Math.hypot(point.x - this.pointerDownPoint.x, point.y - this.pointerDownPoint.y);
-        if (moved >= this.dragStartThreshold) {
+        if (moved >= this.scaled(this.dragStartThreshold)) {
             this.draggingCard = true;
         }
     }
@@ -1807,16 +1809,16 @@ export class MechanicsBrawlGame extends Component {
             if (field.type === 'wind') {
                 g.strokeColor = new Color(170, 239, 255, 220);
                 g.lineWidth = 4;
-                g.moveTo(p.x - field.direction.x * 28, p.y - field.direction.y * 28);
-                g.lineTo(p.x + field.direction.x * 52, p.y + field.direction.y * 52);
+                g.moveTo(p.x - field.direction.x * this.scaled(28), p.y - field.direction.y * this.scaled(28));
+                g.lineTo(p.x + field.direction.x * this.scaled(52), p.y + field.direction.y * this.scaled(52));
                 g.stroke();
             } else if (field.type === 'charge') {
                 g.strokeColor = field.sourceChargeC >= 0 ? new Color(255, 224, 102, 235) : new Color(145, 196, 255, 235);
                 g.lineWidth = 4;
-                g.circle(p.x, p.y, 15);
+                g.circle(p.x, p.y, this.scaled(15));
                 g.stroke();
                 g.moveTo(p.x, p.y);
-                g.lineTo(p.x + field.direction.x * 34, p.y + field.direction.y * 34);
+                g.lineTo(p.x + field.direction.x * this.scaled(34), p.y + field.direction.y * this.scaled(34));
                 g.stroke();
                 this.drawPlusMinus(g, p.x, p.y, field.sourceChargeC >= 0);
             }
@@ -1849,7 +1851,7 @@ export class MechanicsBrawlGame extends Component {
         const hasPortrait = this.updateFighterSprite(index, p, r);
 
         g.fillColor = new Color(0, 0, 0, 90);
-        g.circle(p.x + 5, p.y - 7, r + 4);
+        g.circle(p.x + this.scaled(5), p.y - this.scaled(7), r + this.scaled(4));
         g.fill();
 
         if (!hasPortrait) {
@@ -1860,7 +1862,7 @@ export class MechanicsBrawlGame extends Component {
 
         g.strokeColor = this.currentPlayer === index && this.phase === 'planning' ? new Color(255, 232, 125, 255) : new Color(230, 236, 246, 155);
         g.lineWidth = this.currentPlayer === index && this.phase === 'planning' ? 4 : 2;
-        g.circle(p.x, p.y, r + 3);
+        g.circle(p.x, p.y, r + this.scaled(3));
         g.stroke();
 
         const force = this.lastForces[index];
@@ -1871,7 +1873,7 @@ export class MechanicsBrawlGame extends Component {
             g.strokeColor = new Color(255, 248, 190, 210);
             g.lineWidth = 3;
             g.moveTo(p.x, p.y);
-            g.lineTo(p.x + fx * Math.min(82, forceLen * 42), p.y + fy * Math.min(82, forceLen * 42));
+            g.lineTo(p.x + fx * this.scaled(Math.min(82, forceLen * 42)), p.y + fy * this.scaled(Math.min(82, forceLen * 42)));
             g.stroke();
         }
 
@@ -1880,14 +1882,14 @@ export class MechanicsBrawlGame extends Component {
             g.strokeColor = new Color(255, 255, 255, 130);
             g.lineWidth = 2;
             g.moveTo(p.x, p.y);
-            g.lineTo(p.x + fighter.velMps.x * 28, p.y + fighter.velMps.y * 28);
+            g.lineTo(p.x + fighter.velMps.x * this.scaled(28), p.y + fighter.velMps.y * this.scaled(28));
             g.stroke();
         }
 
         if (Math.abs(stats.chargeC) > 0.01) {
             g.strokeColor = stats.chargeC > 0 ? new Color(255, 229, 116, 180) : new Color(135, 194, 255, 180);
             g.lineWidth = 2;
-            g.circle(p.x, p.y, r + 9);
+            g.circle(p.x, p.y, r + this.scaled(9));
             g.stroke();
         }
     }
@@ -1951,7 +1953,7 @@ export class MechanicsBrawlGame extends Component {
             const t = i / segments;
             const x = from.x + (to.x - from.x) * t;
             const y = from.y + (to.y - from.y) * t;
-            const jitter = i === 0 || i === segments ? 0 : Math.sin(this.snowTick * 21 + i * 3.7) * 8;
+            const jitter = i === 0 || i === segments ? 0 : Math.sin(this.snowTick * 21 + i * 3.7) * this.scaled(8);
             const nx = -(to.y - from.y);
             const ny = to.x - from.x;
             const len = Math.max(0.001, Math.hypot(nx, ny));
@@ -1974,15 +1976,15 @@ export class MechanicsBrawlGame extends Component {
             const p = this.worldToPx(intent.positionM);
             g.strokeColor = new Color(255, 255, 255, 90);
             g.lineWidth = 2;
-            g.circle(p.x, p.y, 14);
+            g.circle(p.x, p.y, this.scaled(14));
             g.stroke();
             if (intent.card.kind === 'windField') {
                 g.moveTo(p.x, p.y);
-                g.lineTo(p.x + intent.direction.x * 46, p.y + intent.direction.y * 46);
+                g.lineTo(p.x + intent.direction.x * this.scaled(46), p.y + intent.direction.y * this.scaled(46));
                 g.stroke();
             } else if (intent.card.kind === 'chargeField') {
                 g.moveTo(p.x, p.y);
-                g.lineTo(p.x + intent.direction.x * 34, p.y + intent.direction.y * 34);
+                g.lineTo(p.x + intent.direction.x * this.scaled(34), p.y + intent.direction.y * this.scaled(34));
                 g.stroke();
             }
         }
@@ -1995,7 +1997,7 @@ export class MechanicsBrawlGame extends Component {
             g.lineWidth = 3;
             g.circle(p.x, p.y, (draft.card.values.radiusM || 2) * this.pxPerM);
             g.moveTo(p.x, p.y);
-            g.lineTo(p.x + dir.x * 72, p.y + dir.y * 72);
+            g.lineTo(p.x + dir.x * this.scaled(72), p.y + dir.y * this.scaled(72));
             g.stroke();
         }
 
@@ -2013,9 +2015,9 @@ export class MechanicsBrawlGame extends Component {
     private drawSnow(g: Graphics, ar: RectLike) {
         g.fillColor = new Color(176, 232, 255, 95);
         for (let i = 0; i < 38; i++) {
-            const x = ar.x + ((i * 67 + this.snowTick * 28) % ar.w);
-            const y = ar.y + ((i * 43 - this.snowTick * 36) % ar.h + ar.h) % ar.h;
-            g.circle(x, y, i % 3 === 0 ? 2.2 : 1.4);
+            const x = ar.x + ((i * this.scaled(67) + this.snowTick * this.scaled(28)) % ar.w);
+            const y = ar.y + ((i * this.scaled(43) - this.snowTick * this.scaled(36)) % ar.h + ar.h) % ar.h;
+            g.circle(x, y, this.scaled(i % 3 === 0 ? 2.2 : 1.4));
             g.fill();
         }
     }
@@ -2119,29 +2121,29 @@ export class MechanicsBrawlGame extends Component {
 
         const center = this.configTurntableCenter();
         g.fillColor = new Color(31, 42, 58, 255);
-        g.circle(center.x, center.y, 62);
+        g.circle(center.x, center.y, this.scaled(62));
         g.fill();
         g.strokeColor = new Color(111, 138, 178, 255);
         g.lineWidth = 2;
-        g.circle(center.x, center.y, 62);
+        g.circle(center.x, center.y, this.scaled(62));
         g.stroke();
 
         const dir = this.angleToVector(draft.angleDeg);
         g.strokeColor = new Color(255, 226, 126, 255);
         g.lineWidth = 4;
         g.moveTo(center.x, center.y);
-        g.lineTo(center.x + dir.x * 54, center.y + dir.y * 54);
+        g.lineTo(center.x + dir.x * this.scaled(54), center.y + dir.y * this.scaled(54));
         g.stroke();
         g.fillColor = new Color(255, 226, 126, 255);
-        g.circle(center.x + dir.x * 54, center.y + dir.y * 54, 6);
+        g.circle(center.x + dir.x * this.scaled(54), center.y + dir.y * this.scaled(54), this.scaled(6));
         g.fill();
 
         g.fillColor = new Color(31, 42, 58, 255);
-        g.rect(50, -6, 136, 42);
+        g.rect(this.scaled(50), this.scaled(-6), this.scaled(136), this.scaled(42));
         g.fill();
         g.strokeColor = new Color(255, 226, 126, 210);
         g.lineWidth = 2;
-        g.rect(50, -6, 136, 42);
+        g.rect(this.scaled(50), this.scaled(-6), this.scaled(136), this.scaled(42));
         g.stroke();
 
         this.drawButton(g, this.configAngleMinusRect(), new Color(50, 60, 76, 255), true);
@@ -2211,11 +2213,11 @@ export class MechanicsBrawlGame extends Component {
     private drawPlusMinus(g: Graphics, x: number, y: number, positive: boolean) {
         g.strokeColor = positive ? new Color(255, 235, 120, 255) : new Color(145, 196, 255, 255);
         g.lineWidth = 3;
-        g.moveTo(x - 7, y);
-        g.lineTo(x + 7, y);
+        g.moveTo(x - this.scaled(7), y);
+        g.lineTo(x + this.scaled(7), y);
         if (positive) {
-            g.moveTo(x, y - 7);
-            g.lineTo(x, y + 7);
+            g.moveTo(x, y - this.scaled(7));
+            g.lineTo(x, y + this.scaled(7));
         }
         g.stroke();
     }
@@ -2284,7 +2286,7 @@ export class MechanicsBrawlGame extends Component {
                 continue;
             }
             const p = this.worldToPx(this.fighters[i].posM);
-            label.node.setPosition(p.x, p.y + this.fighters[i].radiusM * this.pxPerM + 24);
+            label.node.setPosition(p.x, p.y + this.fighters[i].radiusM * this.pxPerM + this.scaled(24));
             label.string = this.fighters[i].name;
         }
     }
