@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "link-cc-mcp": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:3200/mcp"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "gateway": {
+    "port": 3200,
+    "host": "127.0.0.1",
+    "autoStart": true
+  },
+  "enabledDomains": [],
+  "disabledHandlers": [
+    "comp_set_button_handler",
+    "comp_batch_modify",
+    "project_update_build_scenes"
+  ]
+}
