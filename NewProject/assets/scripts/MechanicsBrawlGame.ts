@@ -1,4 +1,4 @@
-import { _decorator, AudioClip, AudioSource, Color, Component, EventMouse, Graphics, ImageAsset, input, Input, Label, Node, profiler, resources, Sprite, SpriteFrame, Texture2D, UITransform, Vec2, Vec3, view } from 'cc';
+import { _decorator, AudioClip, AudioSource, Color, Component, EventMouse, EventTouch, Graphics, ImageAsset, input, Input, Label, Node, profiler, resources, Sprite, SpriteFrame, Texture2D, UITransform, Vec2, Vec3, view } from 'cc';
 
 const { ccclass } = _decorator;
 
@@ -156,6 +156,7 @@ export class MechanicsBrawlGame extends Component {
     private pressedCardIndex = -1;
     private pointerDownPoint = new Vec2();
     private aimPoint = new Vec2();
+    private suppressMouseUntilMs = 0;
     private fieldConfigDraft: FieldConfigDraft | null = null;
 
     private roundWins = [0, 0];
@@ -206,6 +207,7 @@ export class MechanicsBrawlGame extends Component {
     private cardH = 82;
     private cardGap = 12;
     private readonly dragStartThreshold = 12;
+    private readonly touchMouseSuppressMs = 500;
     private readonly audioPaths: Record<AudioKey, string> = {
         start: 'audio/start',
         game: 'audio/game',
@@ -230,12 +232,20 @@ export class MechanicsBrawlGame extends Component {
         input.on(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
         input.on(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
         input.on(Input.EventType.MOUSE_UP, this.onMouseUp, this);
+        input.on(Input.EventType.TOUCH_START, this.onTouchStart, this);
+        input.on(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
+        input.on(Input.EventType.TOUCH_END, this.onTouchEnd, this);
+        input.on(Input.EventType.TOUCH_CANCEL, this.onTouchCancel, this);
     }
 
     onDestroy() {
         input.off(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
         input.off(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
         input.off(Input.EventType.MOUSE_UP, this.onMouseUp, this);
+        input.off(Input.EventType.TOUCH_START, this.onTouchStart, this);
+        input.off(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
+        input.off(Input.EventType.TOUCH_END, this.onTouchEnd, this);
+        input.off(Input.EventType.TOUCH_CANCEL, this.onTouchCancel, this);
     }
 
     update(deltaTime: number) {
@@ -1603,7 +1613,47 @@ export class MechanicsBrawlGame extends Component {
     }
 
     private onMouseDown(event: EventMouse) {
-        const point = this.toLocalPoint(event);
+        if (this.shouldIgnoreMouseInput()) {
+            return;
+        }
+        this.handlePointerDown(this.toLocalPoint(event));
+    }
+
+    private onMouseMove(event: EventMouse) {
+        if (this.shouldIgnoreMouseInput()) {
+            return;
+        }
+        this.handlePointerMove(this.toLocalPoint(event));
+    }
+
+    private onMouseUp(event: EventMouse) {
+        if (this.shouldIgnoreMouseInput()) {
+            return;
+        }
+        this.handlePointerUp(this.toLocalPoint(event));
+    }
+
+    private onTouchStart(event: EventTouch) {
+        this.markTouchInput();
+        this.handlePointerDown(this.toLocalPoint(event));
+    }
+
+    private onTouchMove(event: EventTouch) {
+        this.markTouchInput();
+        this.handlePointerMove(this.toLocalPoint(event));
+    }
+
+    private onTouchEnd(event: EventTouch) {
+        this.markTouchInput();
+        this.handlePointerUp(this.toLocalPoint(event));
+    }
+
+    private onTouchCancel(event: EventTouch) {
+        this.markTouchInput();
+        this.cancelPointerInput();
+    }
+
+    private handlePointerDown(point: Vec2) {
 
         if (this.hitReset(point)) {
             this.resetToStart();
@@ -1672,8 +1722,7 @@ export class MechanicsBrawlGame extends Component {
         }
     }
 
-    private onMouseMove(event: EventMouse) {
-        const point = this.toLocalPoint(event);
+    private handlePointerMove(point: Vec2) {
         this.aimPoint.set(point.x, point.y);
         if (this.phase !== 'planning' || this.pressedCardIndex < 0) {
             return;
@@ -1684,13 +1733,24 @@ export class MechanicsBrawlGame extends Component {
         }
     }
 
-    private onMouseUp(event: EventMouse) {
-        const point = this.toLocalPoint(event);
+    private handlePointerUp(point: Vec2) {
         if (this.phase === 'planning' && this.draggingCard && this.pressedCardIndex === this.selectedCard) {
             this.queueSelectedCard(point);
         }
+        this.cancelPointerInput();
+    }
+
+    private cancelPointerInput() {
         this.draggingCard = false;
         this.pressedCardIndex = -1;
+    }
+
+    private markTouchInput() {
+        this.suppressMouseUntilMs = Date.now() + this.touchMouseSuppressMs;
+    }
+
+    private shouldIgnoreMouseInput() {
+        return Date.now() < this.suppressMouseUntilMs;
     }
 
     private draw() {
@@ -2549,7 +2609,7 @@ export class MechanicsBrawlGame extends Component {
         return point.x >= ar.x && point.x <= ar.x + ar.w && point.y >= ar.y && point.y <= ar.y + ar.h;
     }
 
-    private toLocalPoint(event: EventMouse) {
+    private toLocalPoint(event: EventMouse | EventTouch) {
         const p = event.getUILocation();
         const local = this.canvas.convertToNodeSpaceAR(new Vec3(p.x, p.y, 0));
         return new Vec2(local.x, local.y);
