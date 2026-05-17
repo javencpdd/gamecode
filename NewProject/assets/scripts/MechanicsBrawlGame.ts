@@ -648,17 +648,24 @@ export class MechanicsBrawlGame extends Component {
 
         const newton = [
             c('newton_wind', '牛顿风道', '牛顿\n风道', 'newton', 'windField', 'arena', 3, new Color(118, 216, 255, 255), '牛顿专属。放置矩形方向风场。拖放后设置风向和风力，范围按风向形成长方形。', '矩形 4.6 m x 1.8 m，风力 0.30-1.60 N，持续 3 s', { lengthM: 4.6, widthM: 1.8, forceN: 0.85, minForceN: 0.30, maxForceN: 1.60, forceStepN: 0.05 }),
+            c('newton_jet', '动力喷流', '动力\n喷流', 'newton', 'windField', 'arena', 2, new Color(95, 196, 255, 255), '牛顿专属。生成更窄但更强的定向喷流，适合做短时强推和边线压迫。', '矩形 5.0 m x 1.2 m，风力 0.80-2.10 N，持续 2 s', { lengthM: 5.0, widthM: 1.2, forceN: 1.35, minForceN: 0.80, maxForceN: 2.10, forceStepN: 0.05 }),
             c('newton_inertia', '惯性锁定', '惯性\n锁定', 'newton', 'massBuff', 'self', 2, new Color(93, 164, 255, 255), '牛顿专属。按比例提高自身质量和抗扰动能力。', '自身质量 x1.35，持续 2 s', { massMultiplier: 1.35 }),
+            c('newton_ballast', '压舱配重', '压舱\n配重', 'newton', 'massBuff', 'self', 3, new Color(132, 174, 255, 255), '牛顿专属。显著提高自身质量，让自己更难被场源和碰撞推走。', '自身质量 x1.60，持续 3 s', { massMultiplier: 1.60 }),
             c('newton_board', '牛顿砖列', '牛顿\n砖列', 'newton', 'wallCreate', 'arena', 5, new Color(111, 145, 210, 255), '牛顿专属。一次建造 2 个连续方块墙体单位。', '2 个 0.4 m 方块，耐久 2，持续 5 s', { blocks: 2, hp: 2 }),
             c('newton_break', '支点拆解', '支点\n拆解', 'newton', 'wallBreak', 'wall', 0, new Color(255, 150, 82, 255), '牛顿专属。按方块单位拆解墙体。', '墙体耐久 -2 格，结算前一次性', { damage: 2 }),
             c('newton_damping', '静止参考系', '静止\n参考', 'newton', 'dampingZone', 'arena', 3, new Color(157, 213, 255, 255), '牛顿专属。放置阻尼区，使范围内速度衰减更强。', '半径 2.2 m，阻尼 +0.16，持续 3 s', { radiusM: 2.2, frictionDelta: 0.16 }),
+            c('newton_anchor', '地面锚定', '地面\n锚定', 'newton', 'frictionBuff', 'self', 2, new Color(141, 223, 207, 255), '牛顿专属。显著提高自身摩擦系数，适合在墙边或中心稳住位置。', '自身摩擦系数 x1.60 后 +0.04，持续 2 s', { frictionMultiplier: 1.60, frictionDelta: 0.04 }),
         ];
 
         const maxwell = [
             c('maxwell_charge', '微型电荷点', '微型\n电荷', 'maxwell', 'chargeField', 'arena', 4, new Color(255, 118, 126, 255), '麦克斯韦专属。放置略强固定电荷点，按库仑公式结算，并用最小距离限制峰值。', '半径 3.7 m，源电荷 1.0-2.3 C，k=0.56，最小距离 0.90 m，持续 4 s', { radiusM: 3.7, sourceChargeC: 1.55, minSourceChargeC: 1.0, maxSourceChargeC: 2.3, sourceChargeStepC: 0.1, coulombK: 0.56, minDistanceM: 0.90 }),
             c('maxwell_focus', '库仑聚焦', '库仑\n聚焦', 'maxwell', 'chargeField', 'arena', 3, new Color(103, 232, 218, 255), '麦克斯韦专属。放置更紧凑但更强的固定电荷点，强调近距离库仑作用。', '半径 2.9 m，源电荷 1.2-2.6 C，k=0.62，最小距离 0.78 m，持续 3 s', { radiusM: 2.9, sourceChargeC: 1.75, minSourceChargeC: 1.2, maxSourceChargeC: 2.6, sourceChargeStepC: 0.1, coulombK: 0.62, minDistanceM: 0.78 }),
+            c('maxwell_array', '电荷阵列', '电荷\n阵列', 'maxwell', 'chargeField', 'arena', 5, new Color(255, 134, 160, 255), '麦克斯韦专属。放置覆盖更广的固定电荷场，适合做区域压制和持续牵制。', '半径 4.4 m，源电荷 0.9-1.9 C，k=0.50，最小距离 1.00 m，持续 5 s', { radiusM: 4.4, sourceChargeC: 1.25, minSourceChargeC: 0.9, maxSourceChargeC: 1.9, sourceChargeStepC: 0.1, coulombK: 0.50, minDistanceM: 1.00 }),
             c('maxwell_flip', '电荷翻转', '电荷\n翻转', 'maxwell', 'chargeFlip', 'opponent', 0, new Color(255, 143, 225, 255), '麦克斯韦专属。把对手电荷取反，改变电磁方向。', '对手电荷取反，结算前一次性，范围 -5 C 到 5 C', { chargeMultiplier: -1 }),
             c('maxwell_discharge', '感应泄放', '感应\n泄放', 'maxwell', 'chargeAdjust', 'opponent', 0, new Color(158, 184, 255, 255), '麦克斯韦专属。强制削弱对手电荷强度，使其更难从库仑场中获得大位移。', '对手电荷 x0.40，结算前一次性，范围 -5 C 到 5 C', { chargeMultiplier: 0.40 }),
+            c('maxwell_induction', '感应增荷', '感应\n增荷', 'maxwell', 'chargeAdjust', 'self', 0, new Color(255, 180, 110, 255), '麦克斯韦专属。提高自身电荷强度，让自己在已有库仑场中受力更显著。', '自身电荷 x1.60，结算前一次性，范围 -5 C 到 5 C', { chargeMultiplier: 1.60 }),
+            c('maxwell_short', '短路泄放', '短路\n泄放', 'maxwell', 'chargeAdjust', 'opponent', 0, new Color(180, 214, 255, 255), '麦克斯韦专属。把对手电荷快速压低到更弱水平，用于破坏对方电学布局。', '对手电荷 x0.25，结算前一次性，范围 -5 C 到 5 C', { chargeMultiplier: 0.25 }),
+            c('maxwell_resonance', '场源谐振', '场源\n谐振', 'maxwell', 'fieldBoost', 'ownField', 2, new Color(255, 206, 137, 255), '麦克斯韦专属。强化最近的己方电荷场，让源电荷和作用时间进一步提升。', '最近己方场源 x1.8，并延长 1 s', { multiplier: 1.8 }),
         ];
 
         this.commonCards = [...basic, ...math];
@@ -1224,11 +1231,12 @@ export class MechanicsBrawlGame extends Component {
                     }, card.durationSec, card.name);
                     break;
                 case 'chargeAdjust':
+                    const chargeTarget = card.targetMode === 'self' ? owner : opponent;
                     if (card.values.chargeMultiplier !== undefined) {
-                        this.multiplyBaseCharge(opponent, card.values.chargeMultiplier);
+                        this.multiplyBaseCharge(chargeTarget, card.values.chargeMultiplier);
                         this.playCue('electronic');
                     } else {
-                        this.adjustChargeTowardZero(opponent, card.values.towardZeroC || 1);
+                        this.adjustChargeTowardZero(chargeTarget, card.values.towardZeroC || 1);
                     }
                     break;
                 case 'mathMassScale':
@@ -1243,7 +1251,7 @@ export class MechanicsBrawlGame extends Component {
                     this.playCue('math');
                     break;
                 case 'chargeFlip':
-                    this.multiplyBaseCharge(opponent, card.values.chargeMultiplier || -1);
+                    this.multiplyBaseCharge(card.targetMode === 'self' ? owner : opponent, card.values.chargeMultiplier || -1);
                     this.playCue('electronic');
                     break;
                 case 'fieldBoost':
