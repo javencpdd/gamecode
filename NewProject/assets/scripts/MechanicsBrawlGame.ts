@@ -13,7 +13,7 @@ type CardKind =
     | 'massBuff'
     | 'frictionBuff'
     | 'chargeAdjust'
-    | 'mathAddMass'
+    | 'mathMassScale'
     | 'mathHalfCharge'
     | 'chargeFlip'
     | 'fieldBoost'
@@ -80,8 +80,12 @@ interface FieldSource {
     positionM: Vec2;
     direction: Vec2;
     radiusM: number;
+    lengthM: number;
+    widthM: number;
     maxForceN: number;
     sourceChargeC: number;
+    coulombK: number;
+    minDistanceM: number;
     frictionDelta: number;
     remainingSec: number;
     label: string;
@@ -110,8 +114,11 @@ interface AttributeEffect {
     owner: number;
     target: number;
     massDeltaKg: number;
+    massMultiplier: number;
     frictionDelta: number;
+    frictionMultiplier: number;
     chargeDeltaC: number;
+    chargeMultiplier: number;
     remainingSec: number;
     label: string;
 }
@@ -122,10 +129,12 @@ interface FieldConfigDraft {
     card: CardDef;
     positionM: Vec2;
     angleDeg: number;
-    valueN: number;
-    minN: number;
-    maxN: number;
-    stepN: number;
+    value: number;
+    minValue: number;
+    maxValue: number;
+    stepValue: number;
+    valueLabel: string;
+    valueUnit: string;
     chargeSign: number;
 }
 
@@ -196,14 +205,17 @@ export class MechanicsBrawlGame extends Component {
     private layoutScale = 1;
     private designW = 720;
     private designH = 1280;
-    private arenaM: RectLike = { x: -5, y: -4.05, w: 10, h: 8.1 };
-    private pxPerM = 64;
+    private arenaM: RectLike = { x: -5.6, y: -4.45, w: 11.2, h: 8.9 };
+    private pxPerM = 59;
     private readonly maxHandSize = 6;
     private readonly openingHandSize = 4;
     private readonly cardsDrawnPerTurn = 2;
     private readonly maxDiscardsPerTurn = 2;
     private readonly maxActionTurns = 30;
     private readonly wallUnitM = 0.4;
+    private readonly fighterChargeRangeM = 5.8;
+    private readonly fighterCoulombK = 0.36;
+    private readonly fighterChargeMinDistanceM = 1.05;
     private cardW = 104;
     private cardH = 82;
     private cardGap = 12;
@@ -443,14 +455,14 @@ export class MechanicsBrawlGame extends Component {
         this.designW = visibleW;
         this.designH = visibleH;
         if (nextMode === 'landscape') {
-            this.arenaM = { x: -6, y: -3.4, w: 12, h: 6.8 };
-            this.pxPerM = this.scaled(74);
+            this.arenaM = { x: -6.8, y: -3.8, w: 13.6, h: 7.6 };
+            this.pxPerM = this.scaled(68);
             this.cardW = this.scaled(112);
             this.cardH = this.scaled(70);
             this.cardGap = this.scaled(10);
         } else {
-            this.arenaM = { x: -5, y: -4.05, w: 10, h: 8.1 };
-            this.pxPerM = this.scaled(64);
+            this.arenaM = { x: -5.6, y: -4.45, w: 11.2, h: 8.9 };
+            this.pxPerM = this.scaled(59);
             this.cardW = this.scaled(104);
             this.cardH = this.scaled(82);
             this.cardGap = this.scaled(12);
@@ -613,34 +625,34 @@ export class MechanicsBrawlGame extends Component {
         });
 
         const basic = [
-            c('basic_wind', '轻风标记', '轻风\n标记', 'basic', 'windField', 'arena', 3, new Color(118, 216, 255, 255), '放置方向风场。拖放后先打开转盘和数值框，确认方向和作用力大小。', '半径 2.6 m，作用力 0.30-1.60 N，持续 3 s', { radiusM: 2.6, forceN: 0.85, minForceN: 0.30, maxForceN: 1.60, forceStepN: 0.05 }),
-            c('basic_charge', '静电标记', '静电\n标记', 'basic', 'chargeField', 'arena', 4, new Color(255, 214, 95, 255), '放置固定电荷点。拖放后可设置偏置方向、最大作用力和正负极性。', '半径 3.2 m，最大作用力 0.40-1.80 N，源电荷 1.4 C，持续 4 s', { radiusM: 3.2, forceN: 1.05, minForceN: 0.40, maxForceN: 1.80, forceStepN: 0.05, chargeC: 1.4 }),
+            c('basic_wind', '轻风标记', '轻风\n标记', 'basic', 'windField', 'arena', 3, new Color(118, 216, 255, 255), '放置矩形方向风场。拖放后设置风向和风力，范围按风向形成长方形。', '矩形 4.6 m x 1.8 m，风力 0.30-1.60 N，持续 3 s', { lengthM: 4.6, widthM: 1.8, forceN: 0.85, minForceN: 0.30, maxForceN: 1.60, forceStepN: 0.05 }),
+            c('basic_charge', '静电标记', '静电\n标记', 'basic', 'chargeField', 'arena', 4, new Color(255, 214, 95, 255), '放置固定电荷点。受力严格按 F=k*q1*q2/r^2 计算，并用最小距离限制峰值。', '半径 3.4 m，源电荷 0.8-2.0 C，k=0.54，最小距离 0.95 m，持续 4 s', { radiusM: 3.4, sourceChargeC: 1.35, minSourceChargeC: 0.8, maxSourceChargeC: 2.0, sourceChargeStepC: 0.1, coulombK: 0.54, minDistanceM: 0.95 }),
             c('rough_zone', '粗糙地带', '粗糙\n地带', 'basic', 'frictionZone', 'arena', 4, new Color(166, 213, 122, 255), '放置摩擦区。角色经过时速度衰减更明显。', '半径 2.1 m，摩擦系数 +0.10，持续 4 s', { radiusM: 2.1, frictionDelta: 0.10 }),
             c('smooth_zone', '光滑地带', '光滑\n地带', 'basic', 'frictionZone', 'arena', 3, new Color(94, 229, 214, 255), '放置低摩擦冰面。视觉偏蓝并带雪花反馈。', '半径 2.2 m，摩擦系数 -0.06，持续 3 s', { radiusM: 2.2, frictionDelta: -0.06 }),
             c('temp_wall', '方块筑墙', '方块\n筑墙', 'basic', 'wallCreate', 'arena', 5, new Color(190, 144, 255, 255), '用最小正方形墙体单位建造 1 格墙。墙体不反弹，所有墙体都可被破坏。', '1 个 0.4 m x 0.4 m 方块，耐久 1，持续 5 s', { blocks: 1, hp: 1 }),
             c('crack_hammer', '方块拆除', '方块\n拆除', 'basic', 'wallBreak', 'wall', 0, new Color(255, 156, 101, 255), '选择墙体，按最小正方形单位拆除。回合末扣除 1 格耐久。', '墙体耐久 -1 格，结算前一次性', { damage: 1 }),
-            c('shoe_spikes', '稳定鞋钉', '稳定\n鞋钉', 'basic', 'frictionBuff', 'self', 2, new Color(171, 238, 147, 255), '临时提高自身摩擦系数，使角色更容易停住。', '自身摩擦系数 +0.08，持续 2 s', { frictionDelta: 0.08 }),
-            c('mass_light', '轻量校准', '轻量\n校准', 'basic', 'massBuff', 'self', 2, new Color(139, 207, 255, 255), '临时降低自身质量，更容易被场源影响。', '自身质量 -0.25 kg，持续 2 s', { massDeltaKg: -0.25 }),
-            c('mass_heavy', '重量校准', '重量\n校准', 'basic', 'massBuff', 'self', 2, new Color(255, 201, 111, 255), '临时提高自身质量，更难被弱场源推动。', '自身质量 +0.35 kg，持续 2 s', { massDeltaKg: 0.35 }),
-            c('discharge', '放电校准', '放电\n校准', 'basic', 'chargeAdjust', 'opponent', 0, new Color(255, 174, 220, 255), '让对手电荷向 0 靠近，削弱电磁受力。', '对手电荷向 0 靠近 1 C，结算前一次性', { towardZeroC: 1 }),
+            c('shoe_spikes', '稳定鞋钉', '稳定\n鞋钉', 'basic', 'frictionBuff', 'self', 2, new Color(171, 238, 147, 255), '临时提高自身摩擦系数，使角色更容易停住。', '自身摩擦系数 x1.35 后 +0.02，持续 2 s', { frictionMultiplier: 1.35, frictionDelta: 0.02 }),
+            c('mass_light', '轻量校准', '轻量\n校准', 'basic', 'massBuff', 'self', 2, new Color(139, 207, 255, 255), '临时按比例降低自身质量，更容易被场源影响。', '自身质量 x0.82，持续 2 s', { massMultiplier: 0.82 }),
+            c('mass_heavy', '重量校准', '重量\n校准', 'basic', 'massBuff', 'self', 2, new Color(255, 201, 111, 255), '临时按比例提高自身质量，更难被弱场源推动。', '自身质量 x1.18，持续 2 s', { massMultiplier: 1.18 }),
+            c('discharge', '放电校准', '放电\n校准', 'basic', 'chargeAdjust', 'opponent', 0, new Color(255, 174, 220, 255), '让对手电荷按比例向 0 衰减，削弱库仑受力。', '对手电荷 x0.65，结算前一次性', { chargeMultiplier: 0.65 }),
         ];
 
         const math = [
-            c('math_mass_plus', '加一校准', '加一\n校准', 'math', 'mathAddMass', 'self', 1, new Color(255, 238, 139, 255), '基础数学牌。把自身质量增加 1 个 kg 单位，执行边界限制。', '自身质量 +1 kg，持续 1 s，质量范围 0.5-5.0 kg', { massDeltaKg: 1 }),
+            c('math_mass_scale', '乘法校准', '乘法\n校准', 'math', 'mathMassScale', 'self', 1, new Color(255, 238, 139, 255), '基础数学牌。把自身质量乘以 1.5，执行边界限制。', '自身质量 x1.5，持续 1 s，质量范围 0.5-5.0 kg', { massMultiplier: 1.5 }),
             c('math_charge_half', '半值衰减', '半值\n衰减', 'math', 'mathHalfCharge', 'opponent', 0, new Color(221, 172, 255, 255), '基础数学牌。把对手电荷除以 2，执行边界限制。', '对手电荷 /2，结算前一次性，电荷范围 -5 C 到 5 C', { chargeMultiplier: 0.5 }),
-            c('math_field_boost', '倍率放大', '倍率\n放大', 'math', 'fieldBoost', 'ownField', 2, new Color(255, 203, 119, 255), '基础数学牌。强化一个己方场源，但仍有上限。', '最近己方场源强度 x1.5，上限 2.0 N', { multiplier: 1.5 }),
+            c('math_field_boost', '倍率放大', '倍率\n放大', 'math', 'fieldBoost', 'ownField', 2, new Color(255, 203, 119, 255), '基础数学牌。强化一个己方场源，但仍有上限。', '最近己方场源 x1.5，并延长 1 s', { multiplier: 1.5 }),
         ];
 
         const newton = [
-            c('newton_inertia', '惯性锁定', '惯性\n锁定', 'newton', 'massBuff', 'self', 2, new Color(93, 164, 255, 255), '牛顿专属。提高自身质量和抗扰动能力。', '自身质量 +0.8 kg，持续 2 s', { massDeltaKg: 0.8 }),
+            c('newton_inertia', '惯性锁定', '惯性\n锁定', 'newton', 'massBuff', 'self', 2, new Color(93, 164, 255, 255), '牛顿专属。按比例提高自身质量和抗扰动能力。', '自身质量 x1.35，持续 2 s', { massMultiplier: 1.35 }),
             c('newton_board', '牛顿砖列', '牛顿\n砖列', 'newton', 'wallCreate', 'arena', 5, new Color(111, 145, 210, 255), '牛顿专属。一次建造 2 个连续方块墙体单位。', '2 个 0.4 m 方块，耐久 2，持续 5 s', { blocks: 2, hp: 2 }),
             c('newton_break', '支点拆解', '支点\n拆解', 'newton', 'wallBreak', 'wall', 0, new Color(255, 150, 82, 255), '牛顿专属。按方块单位拆解墙体。', '墙体耐久 -2 格，结算前一次性', { damage: 2 }),
             c('newton_damping', '静止参考系', '静止\n参考', 'newton', 'dampingZone', 'arena', 3, new Color(157, 213, 255, 255), '牛顿专属。放置阻尼区，使范围内速度衰减更强。', '半径 2.2 m，阻尼 +0.16，持续 3 s', { radiusM: 2.2, frictionDelta: 0.16 }),
         ];
 
         const maxwell = [
-            c('maxwell_charge', '微型电荷点', '微型\n电荷', 'maxwell', 'chargeField', 'arena', 4, new Color(255, 118, 126, 255), '麦克斯韦专属。放置更强电荷点，并通过参数面板限制最大作用力。', '半径 3.4 m，最大作用力 0.50-2.20 N，源电荷 1.7 C，持续 4 s', { radiusM: 3.4, forceN: 1.25, minForceN: 0.50, maxForceN: 2.20, forceStepN: 0.05, chargeC: 1.7 }),
-            c('maxwell_wind', '风矢量', '风\n矢量', 'maxwell', 'windField', 'arena', 3, new Color(103, 232, 218, 255), '麦克斯韦专属。拖放后通过转盘设置方向，通过数字框设置大小。', '半径 2.8 m，作用力 0.40-2.00 N，持续 3 s', { radiusM: 2.8, forceN: 1.10, minForceN: 0.40, maxForceN: 2.00, forceStepN: 0.05 }),
+            c('maxwell_charge', '微型电荷点', '微型\n电荷', 'maxwell', 'chargeField', 'arena', 4, new Color(255, 118, 126, 255), '麦克斯韦专属。放置略强固定电荷点，按库仑公式结算，并用最小距离限制峰值。', '半径 3.7 m，源电荷 1.0-2.3 C，k=0.56，最小距离 0.90 m，持续 4 s', { radiusM: 3.7, sourceChargeC: 1.55, minSourceChargeC: 1.0, maxSourceChargeC: 2.3, sourceChargeStepC: 0.1, coulombK: 0.56, minDistanceM: 0.90 }),
+            c('maxwell_wind', '风矢量', '风\n矢量', 'maxwell', 'windField', 'arena', 3, new Color(103, 232, 218, 255), '麦克斯韦专属。拖放后通过转盘设置方向，通过数字框设置风力，形成稍长的矩形风道。', '矩形 5.2 m x 2.0 m，风力 0.40-1.90 N，持续 3 s', { lengthM: 5.2, widthM: 2.0, forceN: 1.08, minForceN: 0.40, maxForceN: 1.90, forceStepN: 0.05 }),
             c('maxwell_flip', '电荷翻转', '电荷\n翻转', 'maxwell', 'chargeFlip', 'opponent', 0, new Color(255, 143, 225, 255), '麦克斯韦专属。把对手电荷取反，改变电磁方向。', '对手电荷取反，结算前一次性，范围 -5 C 到 5 C', { chargeMultiplier: -1 }),
             c('maxwell_smooth', '等势线', '等势\n线', 'maxwell', 'frictionZone', 'arena', 2, new Color(158, 184, 255, 255), '麦克斯韦专属。放置轻微低摩擦区，辅助场源组合。', '半径 2.3 m，摩擦系数 -0.03，持续 2 s', { radiusM: 2.3, frictionDelta: -0.03 }),
         ];
@@ -706,7 +718,7 @@ export class MechanicsBrawlGame extends Component {
     }
 
     private createInitialFighters() {
-        const offsetX = this.layoutMode === 'landscape' ? 4.6 : 3.8;
+        const offsetX = this.layoutMode === 'landscape' ? 5.1 : 4.45;
         this.fighters = [
             {
                 name: '艾萨克·牛顿',
@@ -735,16 +747,16 @@ export class MechanicsBrawlGame extends Component {
     private createInitialWalls() {
         this.walls = [];
         if (this.layoutMode === 'landscape') {
-            this.addWall(-3.2, 0, 0.4, 2.0, -1, 5, 0, true, true);
-            this.addWall(3.2, 0, 0.4, 2.0, -1, 5, 0, true, true);
-            this.addWall(0, 1.9, 2.0, 0.4, -1, 5, 0, true, true);
-            this.addWall(0, -1.9, 2.0, 0.4, -1, 5, 0, true, true);
+            this.addWall(-3.7, 0, 0.4, 2.2, -1, 5, 0, true, true);
+            this.addWall(3.7, 0, 0.4, 2.2, -1, 5, 0, true, true);
+            this.addWall(0, 2.15, 2.2, 0.4, -1, 5, 0, true, true);
+            this.addWall(0, -2.15, 2.2, 0.4, -1, 5, 0, true, true);
             return;
         }
-        this.addWall(-2.8, 0, 0.4, 2.2, -1, 5, 0, true, true);
-        this.addWall(2.8, 0, 0.4, 2.2, -1, 5, 0, true, true);
-        this.addWall(0, 2.35, 2.4, 0.4, -1, 5, 0, true, true);
-        this.addWall(0, -2.35, 2.4, 0.4, -1, 5, 0, true, true);
+        this.addWall(-3.15, 0, 0.4, 2.4, -1, 5, 0, true, true);
+        this.addWall(3.15, 0, 0.4, 2.4, -1, 5, 0, true, true);
+        this.addWall(0, 2.65, 2.6, 0.4, -1, 5, 0, true, true);
+        this.addWall(0, -2.65, 2.6, 0.4, -1, 5, 0, true, true);
     }
 
     private dealOpeningHands() {
@@ -911,26 +923,51 @@ export class MechanicsBrawlGame extends Component {
 
     private openFieldConfig(card: CardDef, handIndex: number, positionM: Vec2, direction: Vec2) {
         const angle = this.vectorToAngle(direction);
-        const minN = card.values.minForceN || 0.25;
-        const maxN = card.values.maxForceN || 2.0;
-        const valueN = this.clamp(card.values.forceN || minN, minN, maxN);
+        const spec = this.fieldConfigValueSpec(card);
         this.fieldConfigDraft = {
             owner: this.currentPlayer,
             handIndex,
             card,
             positionM,
             angleDeg: angle,
-            valueN,
-            minN,
-            maxN,
-            stepN: card.values.forceStepN || 0.05,
+            value: spec.value,
+            minValue: spec.minValue,
+            maxValue: spec.maxValue,
+            stepValue: spec.stepValue,
+            valueLabel: spec.valueLabel,
+            valueUnit: spec.valueUnit,
             chargeSign: this.currentPlayer === 0 ? 1 : -1,
         };
         this.draggingCard = false;
         this.pressedCardIndex = -1;
         this.cardInfoText = this.fieldConfigText();
-        this.message = `${card.name} 参数设置：用转盘设方向，用数字框限制作用力大小，确认后才加入计划队列。`;
+        this.message = `${card.name} 参数设置：${card.kind === 'windField' ? '用转盘设风向，用数字框设风力' : '用数字框设源电荷，可切换极性'}，确认后才加入计划队列。`;
         this.playCue('click');
+    }
+
+    private fieldConfigValueSpec(card: CardDef) {
+        if (card.kind === 'chargeField') {
+            const minValue = card.values.minSourceChargeC || 0.5;
+            const maxValue = card.values.maxSourceChargeC || 2.5;
+            return {
+                value: this.clamp(card.values.sourceChargeC || minValue, minValue, maxValue),
+                minValue,
+                maxValue,
+                stepValue: card.values.sourceChargeStepC || 0.1,
+                valueLabel: '源电荷',
+                valueUnit: 'C',
+            };
+        }
+        const minValue = card.values.minForceN || 0.25;
+        const maxValue = card.values.maxForceN || 2.0;
+        return {
+            value: this.clamp(card.values.forceN || minValue, minValue, maxValue),
+            minValue,
+            maxValue,
+            stepValue: card.values.forceStepN || 0.05,
+            valueLabel: '风力',
+            valueUnit: 'N',
+        };
     }
 
     private confirmFieldConfig() {
@@ -944,9 +981,9 @@ export class MechanicsBrawlGame extends Component {
             this.message = '这张卡已经不在手牌中，场源设置已取消。';
             return;
         }
-        const direction = this.angleToVector(draft.angleDeg);
+        const direction = this.fieldConfigUsesDirection(draft.card) ? this.angleToVector(draft.angleDeg) : new Vec2();
         const sourceCharge = draft.card.kind === 'chargeField'
-            ? draft.chargeSign * Math.max(0.2, draft.card.values.chargeC || 1)
+            ? draft.chargeSign * Math.max(0.1, draft.value)
             : 0;
         const intent: CardIntent = {
             id: this.intentId++,
@@ -954,7 +991,7 @@ export class MechanicsBrawlGame extends Component {
             card: draft.card,
             positionM: this.cloneVec(draft.positionM),
             direction,
-            fieldStrengthN: draft.valueN,
+            fieldStrengthN: draft.card.kind === 'windField' ? draft.value : undefined,
             sourceChargeC: sourceCharge,
             summary: this.intentSummary(draft.card, draft.positionM, direction),
         };
@@ -964,7 +1001,10 @@ export class MechanicsBrawlGame extends Component {
         this.selectedCard = -1;
         this.fieldConfigDraft = null;
         this.cardInfoText = this.intentDetails(intent);
-        this.message = `${this.fighters[draft.owner].name} 计划 ${draft.card.name}：方向 ${this.normalizeAngleDeg(this.vectorToAngle(direction)).toFixed(0)} 度，大小 ${draft.valueN.toFixed(2)} N。`;
+        const valueText = draft.card.kind === 'chargeField'
+            ? `源电荷 ${sourceCharge.toFixed(2)} C`
+            : `方向 ${this.normalizeAngleDeg(this.vectorToAngle(direction)).toFixed(0)} 度，风力 ${draft.value.toFixed(2)} N`;
+        this.message = `${this.fighters[draft.owner].name} 计划 ${draft.card.name}：${valueText}。`;
         this.playCue('click');
     }
 
@@ -988,26 +1028,26 @@ export class MechanicsBrawlGame extends Component {
             this.cancelFieldConfig();
             return true;
         }
-        if (this.hitRect(point, this.configAngleMinusRect())) {
+        if (this.fieldConfigUsesDirection(draft.card) && this.hitRect(point, this.configAngleMinusRect())) {
             draft.angleDeg = this.normalizeAngleDeg(draft.angleDeg - 15);
             this.cardInfoText = this.fieldConfigText();
             this.playCue('click');
             return true;
         }
-        if (this.hitRect(point, this.configAnglePlusRect())) {
+        if (this.fieldConfigUsesDirection(draft.card) && this.hitRect(point, this.configAnglePlusRect())) {
             draft.angleDeg = this.normalizeAngleDeg(draft.angleDeg + 15);
             this.cardInfoText = this.fieldConfigText();
             this.playCue('click');
             return true;
         }
         if (this.hitRect(point, this.configValueMinusRect())) {
-            draft.valueN = this.clamp(draft.valueN - draft.stepN, draft.minN, draft.maxN);
+            draft.value = this.clamp(draft.value - draft.stepValue, draft.minValue, draft.maxValue);
             this.cardInfoText = this.fieldConfigText();
             this.playCue('click');
             return true;
         }
         if (this.hitRect(point, this.configValuePlusRect())) {
-            draft.valueN = this.clamp(draft.valueN + draft.stepN, draft.minN, draft.maxN);
+            draft.value = this.clamp(draft.value + draft.stepValue, draft.minValue, draft.maxValue);
             this.cardInfoText = this.fieldConfigText();
             this.playCue('click');
             return true;
@@ -1023,7 +1063,7 @@ export class MechanicsBrawlGame extends Component {
         const dx = point.x - center.x;
         const dy = point.y - center.y;
         const dist = Math.hypot(dx, dy);
-        if (dist <= this.scaled(68)) {
+        if (this.fieldConfigUsesDirection(draft.card) && dist <= this.scaled(68)) {
             draft.angleDeg = this.normalizeAngleDeg(Math.atan2(dy, dx) * 180 / Math.PI);
             this.cardInfoText = this.fieldConfigText();
             this.playCue('click');
@@ -1040,12 +1080,23 @@ export class MechanicsBrawlGame extends Component {
         const polarity = draft.card.kind === 'chargeField'
             ? `｜极性 ${draft.chargeSign > 0 ? '+' : '-'}`
             : '';
+        const directionText = this.fieldConfigUsesDirection(draft.card)
+            ? `｜方向 ${this.normalizeAngleDeg(draft.angleDeg).toFixed(0)} 度`
+            : '';
+        const formulaText = draft.card.kind === 'chargeField'
+            ? `库仑公式 F=k*q1*q2/r^2｜k ${(draft.card.values.coulombK || 0.58).toFixed(2)}｜最小距离 ${(draft.card.values.minDistanceM || 0.8).toFixed(2)} m`
+            : `矩形 ${(draft.card.values.lengthM || 4).toFixed(1)} x ${(draft.card.values.widthM || 2).toFixed(1)} m`;
         return [
             `${draft.card.name} 参数设置`,
-            `位置 (${draft.positionM.x.toFixed(2)}, ${draft.positionM.y.toFixed(2)}) m｜方向 ${this.normalizeAngleDeg(draft.angleDeg).toFixed(0)} 度${polarity}`,
-            `大小 ${draft.valueN.toFixed(2)} N｜允许范围 ${draft.minN.toFixed(2)}-${draft.maxN.toFixed(2)} N｜步进 ${draft.stepN.toFixed(2)} N`,
+            `位置 (${draft.positionM.x.toFixed(2)}, ${draft.positionM.y.toFixed(2)}) m${directionText}${polarity}`,
+            `${draft.valueLabel} ${draft.value.toFixed(2)} ${draft.valueUnit}｜允许范围 ${draft.minValue.toFixed(2)}-${draft.maxValue.toFixed(2)} ${draft.valueUnit}｜步进 ${draft.stepValue.toFixed(2)} ${draft.valueUnit}`,
+            formulaText,
             '确认后才会消耗手牌并进入计划队列；取消会保留手牌。',
         ].join('\n');
+    }
+
+    private fieldConfigUsesDirection(card: CardDef) {
+        return card.kind === 'windField';
     }
 
     private angleToVector(angleDeg: number) {
@@ -1118,12 +1169,18 @@ export class MechanicsBrawlGame extends Component {
 
             switch (card.kind) {
                 case 'windField':
-                    this.addField(owner, 'wind', intent.positionM, intent.direction, card.values.radiusM, intent.fieldStrengthN || card.values.forceN, 0, 0, card.durationSec, card.name, card.color);
+                    this.addField(owner, 'wind', intent.positionM, intent.direction, 0, intent.fieldStrengthN || card.values.forceN, 0, 0, card.durationSec, card.name, card.color, {
+                        lengthM: card.values.lengthM || 4,
+                        widthM: card.values.widthM || 2,
+                    });
                     this.playCue('wind');
                     break;
                 case 'chargeField': {
                     const sign = owner === 0 ? 1 : -1;
-                    this.addField(owner, 'charge', intent.positionM, intent.direction, card.values.radiusM, intent.fieldStrengthN || card.values.forceN, intent.sourceChargeC || card.values.chargeC * sign, 0, card.durationSec, card.name, card.color);
+                    this.addField(owner, 'charge', intent.positionM, intent.direction, card.values.radiusM, 0, intent.sourceChargeC || card.values.sourceChargeC * sign, 0, card.durationSec, card.name, card.color, {
+                        coulombK: card.values.coulombK || 0.58,
+                        minDistanceM: card.values.minDistanceM || 0.8,
+                    });
                     this.playCue('electronic');
                     break;
                 }
@@ -1141,24 +1198,38 @@ export class MechanicsBrawlGame extends Component {
                     this.damageWall(intent.targetWallId, card.values.damage);
                     break;
                 case 'massBuff':
-                    this.addAttrEffect(owner, owner, card.values.massDeltaKg || 0, 0, 0, card.durationSec, card.name);
+                    this.addAttrEffect(owner, owner, {
+                        massDeltaKg: card.values.massDeltaKg || 0,
+                        massMultiplier: card.values.massMultiplier || 1,
+                    }, card.durationSec, card.name);
                     break;
                 case 'frictionBuff':
-                    this.addAttrEffect(owner, owner, 0, card.values.frictionDelta || 0, 0, card.durationSec, card.name);
+                    this.addAttrEffect(owner, owner, {
+                        frictionDelta: card.values.frictionDelta || 0,
+                        frictionMultiplier: card.values.frictionMultiplier || 1,
+                    }, card.durationSec, card.name);
                     break;
                 case 'chargeAdjust':
-                    this.adjustChargeTowardZero(opponent, card.values.towardZeroC || 1);
+                    if (card.values.chargeMultiplier !== undefined) {
+                        this.multiplyBaseCharge(opponent, card.values.chargeMultiplier);
+                        this.playCue('electronic');
+                    } else {
+                        this.adjustChargeTowardZero(opponent, card.values.towardZeroC || 1);
+                    }
                     break;
-                case 'mathAddMass':
-                    this.addAttrEffect(owner, owner, card.values.massDeltaKg || 1, 0, 0, card.durationSec, card.name);
+                case 'mathMassScale':
+                    this.addAttrEffect(owner, owner, {
+                        massDeltaKg: card.values.massDeltaKg || 0,
+                        massMultiplier: card.values.massMultiplier || 1,
+                    }, card.durationSec, card.name);
                     this.playCue('math');
                     break;
                 case 'mathHalfCharge':
-                    this.fighters[opponent].baseChargeC = this.clamp(this.fighters[opponent].baseChargeC * (card.values.chargeMultiplier || 0.5), -5, 5);
+                    this.multiplyBaseCharge(opponent, card.values.chargeMultiplier || 0.5);
                     this.playCue('math');
                     break;
                 case 'chargeFlip':
-                    this.fighters[opponent].baseChargeC = this.clamp(-this.fighters[opponent].baseChargeC, -5, 5);
+                    this.multiplyBaseCharge(opponent, card.values.chargeMultiplier || -1);
                     this.playCue('electronic');
                     break;
                 case 'fieldBoost':
@@ -1255,23 +1326,19 @@ export class MechanicsBrawlGame extends Component {
             const dx = fighter.posM.x - field.positionM.x;
             const dy = fighter.posM.y - field.positionM.y;
             const dist = Math.max(0.001, Math.hypot(dx, dy));
-            if (dist > field.radiusM) {
-                continue;
-            }
-            const falloff = this.clamp(1 - dist / field.radiusM, 0, 1);
             if (field.type === 'wind') {
-                force.x += field.direction.x * field.maxForceN * falloff;
-                force.y += field.direction.y * field.maxForceN * falloff;
+                if (!this.isInsideWindField(field, fighter.posM)) {
+                    continue;
+                }
+                force.x += field.direction.x * field.maxForceN;
+                force.y += field.direction.y * field.maxForceN;
             } else if (field.type === 'charge') {
-                const sameSign = field.sourceChargeC * stats.chargeC >= 0;
-                const nx = sameSign ? dx / dist : -dx / dist;
-                const ny = sameSign ? dy / dist : -dy / dist;
-                const chargeScale = this.clamp(Math.abs(stats.chargeC) / 2, 0.25, 1.4);
-                const mag = field.maxForceN * falloff * chargeScale;
-                force.x += nx * mag;
-                force.y += ny * mag;
-                force.x += field.direction.x * mag * 0.20;
-                force.y += field.direction.y * mag * 0.20;
+                if (dist > field.radiusM) {
+                    continue;
+                }
+                const coulomb = this.coulombForce(field.sourceChargeC, stats.chargeC, dx, dy, field.coulombK, field.minDistanceM, field.direction);
+                force.x += coulomb.x;
+                force.y += coulomb.y;
             }
         }
 
@@ -1280,17 +1347,40 @@ export class MechanicsBrawlGame extends Component {
         const dx = fighter.posM.x - other.posM.x;
         const dy = fighter.posM.y - other.posM.y;
         const dist = Math.max(0.001, Math.hypot(dx, dy));
-        if (dist < 5.2) {
-            const sameSign = stats.chargeC * otherStats.chargeC >= 0;
-            const nx = sameSign ? dx / dist : -dx / dist;
-            const ny = sameSign ? dy / dist : -dy / dist;
-            const chargeScale = this.clamp(Math.abs(stats.chargeC * otherStats.chargeC) / 4, 0, 1);
-            const mag = 0.55 * this.clamp(1 - dist / 5.2, 0, 1) * chargeScale;
-            force.x += nx * mag;
-            force.y += ny * mag;
+        if (dist < this.fighterChargeRangeM) {
+            const fallback = this.normalized(new Vec2(dx, dy), index === 0 ? new Vec2(-1, 0) : new Vec2(1, 0));
+            const coulomb = this.coulombForce(otherStats.chargeC, stats.chargeC, dx, dy, this.fighterCoulombK, this.fighterChargeMinDistanceM, fallback);
+            force.x += coulomb.x;
+            force.y += coulomb.y;
         }
 
         return force;
+    }
+
+    private coulombForce(sourceChargeC: number, targetChargeC: number, dx: number, dy: number, k: number, minDistanceM: number, fallbackDirection: Vec2) {
+        const product = sourceChargeC * targetChargeC;
+        if (Math.abs(product) < 0.0001) {
+            return new Vec2();
+        }
+        const rawDist = Math.hypot(dx, dy);
+        const dir = rawDist < 0.001
+            ? this.normalized(fallbackDirection, new Vec2(1, 0))
+            : new Vec2(dx / rawDist, dy / rawDist);
+        const effectiveDist = Math.max(Math.max(0.001, minDistanceM), rawDist);
+        const directionSign = product >= 0 ? 1 : -1;
+        const magnitude = Math.abs(k * product) / (effectiveDist * effectiveDist);
+        return new Vec2(dir.x * directionSign * magnitude, dir.y * directionSign * magnitude);
+    }
+
+    private isInsideWindField(field: FieldSource, positionM: Vec2) {
+        const dir = this.normalized(field.direction, field.owner === 0 ? new Vec2(1, 0) : new Vec2(-1, 0));
+        const nx = -dir.y;
+        const ny = dir.x;
+        const dx = positionM.x - field.positionM.x;
+        const dy = positionM.y - field.positionM.y;
+        const along = dx * dir.x + dy * dir.y;
+        const side = dx * nx + dy * ny;
+        return Math.abs(along) <= field.lengthM / 2 && Math.abs(side) <= field.widthM / 2;
     }
 
     private effectiveStats(index: number): FighterStats {
@@ -1298,15 +1388,27 @@ export class MechanicsBrawlGame extends Component {
         let massKg = f.baseMassKg;
         let chargeC = f.baseChargeC;
         let friction = f.baseFriction;
+        let massMultiplier = 1;
+        let chargeMultiplier = 1;
+        let frictionMultiplier = 1;
+        let massDeltaKg = 0;
+        let chargeDeltaC = 0;
+        let frictionDelta = 0;
 
         for (const effect of this.attrEffects) {
             if (effect.target !== index) {
                 continue;
             }
-            massKg += effect.massDeltaKg;
-            chargeC += effect.chargeDeltaC;
-            friction += effect.frictionDelta;
+            massMultiplier *= effect.massMultiplier;
+            chargeMultiplier *= effect.chargeMultiplier;
+            frictionMultiplier *= effect.frictionMultiplier;
+            massDeltaKg += effect.massDeltaKg;
+            chargeDeltaC += effect.chargeDeltaC;
+            frictionDelta += effect.frictionDelta;
         }
+        massKg = massKg * massMultiplier + massDeltaKg;
+        chargeC = chargeC * chargeMultiplier + chargeDeltaC;
+        friction = friction * frictionMultiplier + frictionDelta;
 
         return {
             massKg: this.clamp(massKg, 0.5, 5.0),
@@ -1457,22 +1559,27 @@ export class MechanicsBrawlGame extends Component {
         this.playBgm('game');
     }
 
-    private addField(owner: number, type: FieldType, positionM: Vec2, direction: Vec2, radiusM: number, maxForceN: number, sourceChargeC: number, frictionDelta: number, durationSec: number, label: string, color: Color) {
+    private addField(owner: number, type: FieldType, positionM: Vec2, direction: Vec2, radiusM: number, maxForceN: number, sourceChargeC: number, frictionDelta: number, durationSec: number, label: string, color: Color, options: Record<string, number> = {}) {
         const ownFields = this.fields.filter((field) => field.owner === owner);
         if (ownFields.length >= 3) {
             ownFields.sort((a, b) => a.remainingSec - b.remainingSec);
             this.fields = this.fields.filter((field) => field.id !== ownFields[0].id);
         }
         const dir = this.normalized(direction, owner === 0 ? new Vec2(1, 0) : new Vec2(-1, 0));
+        const fieldRadius = Math.max(0, radiusM);
         this.fields.push({
             id: this.fieldId++,
             owner,
             type,
             positionM: this.cloneVec(positionM),
             direction: dir,
-            radiusM,
+            radiusM: fieldRadius,
+            lengthM: Math.max(0.2, options.lengthM || fieldRadius * 2 || 1),
+            widthM: Math.max(0.2, options.widthM || fieldRadius * 2 || 1),
             maxForceN: this.clamp(maxForceN, 0, 3.0),
             sourceChargeC: this.clamp(sourceChargeC, -5, 5),
+            coulombK: Math.max(0, options.coulombK || 0.58),
+            minDistanceM: Math.max(0.1, options.minDistanceM || 0.8),
             frictionDelta,
             remainingSec: durationSec,
             label,
@@ -1562,14 +1669,17 @@ export class MechanicsBrawlGame extends Component {
         }
     }
 
-    private addAttrEffect(owner: number, target: number, massDeltaKg: number, frictionDelta: number, chargeDeltaC: number, durationSec: number, label: string) {
+    private addAttrEffect(owner: number, target: number, values: Record<string, number>, durationSec: number, label: string) {
         this.attrEffects.push({
             id: this.attrEffectId++,
             owner,
             target,
-            massDeltaKg,
-            frictionDelta,
-            chargeDeltaC,
+            massDeltaKg: values.massDeltaKg || 0,
+            massMultiplier: values.massMultiplier || 1,
+            frictionDelta: values.frictionDelta || 0,
+            frictionMultiplier: values.frictionMultiplier || 1,
+            chargeDeltaC: values.chargeDeltaC || 0,
+            chargeMultiplier: values.chargeMultiplier || 1,
             remainingSec: Math.max(1, durationSec),
             label,
         });
@@ -1585,12 +1695,22 @@ export class MechanicsBrawlGame extends Component {
         this.playCue('electronic');
     }
 
+    private multiplyBaseCharge(index: number, multiplier: number) {
+        this.fighters[index].baseChargeC = this.clamp(this.fighters[index].baseChargeC * multiplier, -5, 5);
+    }
+
     private boostLatestOwnField(owner: number, multiplier: number) {
         const field = this.findLatestOwnField(owner);
         if (!field) {
             return;
         }
-        field.maxForceN = this.clamp(field.maxForceN * multiplier, 0.05, 3.0);
+        if (field.type === 'wind') {
+            field.maxForceN = this.clamp(field.maxForceN * multiplier, 0.05, 3.0);
+        } else if (field.type === 'charge') {
+            field.sourceChargeC = this.clamp(field.sourceChargeC * multiplier, -5, 5);
+        } else {
+            field.frictionDelta = this.clamp(field.frictionDelta * multiplier, -0.30, 0.45);
+        }
         field.remainingSec = Math.min(6, field.remainingSec + 1);
     }
 
@@ -1884,32 +2004,75 @@ export class MechanicsBrawlGame extends Component {
     private drawFields(g: Graphics) {
         for (const field of this.fields) {
             const p = this.worldToPx(field.positionM);
-            const r = field.radiusM * this.pxPerM;
-            g.fillColor = new Color(field.color.r, field.color.g, field.color.b, 34);
-            g.circle(p.x, p.y, r);
-            g.fill();
-            g.strokeColor = new Color(field.color.r, field.color.g, field.color.b, 150);
-            g.lineWidth = this.strokeWidth(2);
-            g.circle(p.x, p.y, r);
-            g.stroke();
-
             if (field.type === 'wind') {
+                this.drawWindRect(g, field.positionM, field.direction, field.lengthM, field.widthM, new Color(field.color.r, field.color.g, field.color.b, 34), new Color(field.color.r, field.color.g, field.color.b, 150));
                 g.strokeColor = new Color(170, 239, 255, 220);
                 g.lineWidth = this.strokeWidth(4);
                 g.moveTo(p.x - field.direction.x * this.scaled(28), p.y - field.direction.y * this.scaled(28));
                 g.lineTo(p.x + field.direction.x * this.scaled(52), p.y + field.direction.y * this.scaled(52));
                 g.stroke();
             } else if (field.type === 'charge') {
+                const r = field.radiusM * this.pxPerM;
+                g.fillColor = new Color(field.color.r, field.color.g, field.color.b, 34);
+                g.circle(p.x, p.y, r);
+                g.fill();
+                g.strokeColor = new Color(field.color.r, field.color.g, field.color.b, 150);
+                g.lineWidth = this.strokeWidth(2);
+                g.circle(p.x, p.y, r);
+                g.stroke();
                 g.strokeColor = field.sourceChargeC >= 0 ? new Color(255, 224, 102, 235) : new Color(145, 196, 255, 235);
                 g.lineWidth = this.strokeWidth(4);
                 g.circle(p.x, p.y, this.scaled(15));
                 g.stroke();
-                g.moveTo(p.x, p.y);
-                g.lineTo(p.x + field.direction.x * this.scaled(34), p.y + field.direction.y * this.scaled(34));
-                g.stroke();
                 this.drawPlusMinus(g, p.x, p.y, field.sourceChargeC >= 0);
+            } else {
+                const r = field.radiusM * this.pxPerM;
+                g.fillColor = new Color(field.color.r, field.color.g, field.color.b, 34);
+                g.circle(p.x, p.y, r);
+                g.fill();
+                g.strokeColor = new Color(field.color.r, field.color.g, field.color.b, 150);
+                g.lineWidth = this.strokeWidth(2);
+                g.circle(p.x, p.y, r);
+                g.stroke();
             }
         }
+    }
+
+    private drawWindRect(g: Graphics, centerM: Vec2, direction: Vec2, lengthM: number, widthM: number, fillColor: Color, strokeColor: Color) {
+        const corners = this.windRectCornersPx(centerM, direction, lengthM, widthM);
+        g.fillColor = fillColor;
+        this.tracePolygon(g, corners);
+        g.fill();
+        g.strokeColor = strokeColor;
+        g.lineWidth = this.strokeWidth(2);
+        this.tracePolygon(g, corners);
+        g.stroke();
+    }
+
+    private windRectCornersPx(centerM: Vec2, direction: Vec2, lengthM: number, widthM: number) {
+        const center = this.worldToPx(centerM);
+        const dir = this.normalized(direction, new Vec2(1, 0));
+        const nx = -dir.y;
+        const ny = dir.x;
+        const halfLengthPx = lengthM * this.pxPerM / 2;
+        const halfWidthPx = widthM * this.pxPerM / 2;
+        return [
+            new Vec2(center.x - dir.x * halfLengthPx - nx * halfWidthPx, center.y - dir.y * halfLengthPx - ny * halfWidthPx),
+            new Vec2(center.x + dir.x * halfLengthPx - nx * halfWidthPx, center.y + dir.y * halfLengthPx - ny * halfWidthPx),
+            new Vec2(center.x + dir.x * halfLengthPx + nx * halfWidthPx, center.y + dir.y * halfLengthPx + ny * halfWidthPx),
+            new Vec2(center.x - dir.x * halfLengthPx + nx * halfWidthPx, center.y - dir.y * halfLengthPx + ny * halfWidthPx),
+        ];
+    }
+
+    private tracePolygon(g: Graphics, points: Vec2[]) {
+        if (points.length === 0) {
+            return;
+        }
+        g.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            g.lineTo(points[i].x, points[i].y);
+        }
+        g.close();
     }
 
     private drawWalls(g: Graphics) {
@@ -2013,7 +2176,7 @@ export class MechanicsBrawlGame extends Component {
         const s0 = this.effectiveStats(0);
         const s1 = this.effectiveStats(1);
         const dist = Math.hypot(this.fighters[0].posM.x - this.fighters[1].posM.x, this.fighters[0].posM.y - this.fighters[1].posM.y);
-        if (Math.abs(s0.chargeC * s1.chargeC) > 0.1 && dist < 5.2) {
+        if (Math.abs(s0.chargeC * s1.chargeC) > 0.1 && dist < this.fighterChargeRangeM) {
             this.drawLightning(g, this.worldToPx(this.fighters[0].posM), this.worldToPx(this.fighters[1].posM), new Color(116, 202, 255, 170));
         }
 
@@ -2066,12 +2229,12 @@ export class MechanicsBrawlGame extends Component {
             g.circle(p.x, p.y, this.scaled(14));
             g.stroke();
             if (intent.card.kind === 'windField') {
+                this.drawWindRect(g, intent.positionM, intent.direction, intent.card.values.lengthM || 4, intent.card.values.widthM || 2, new Color(103, 232, 218, 18), new Color(170, 239, 255, 120));
                 g.moveTo(p.x, p.y);
                 g.lineTo(p.x + intent.direction.x * this.scaled(46), p.y + intent.direction.y * this.scaled(46));
                 g.stroke();
             } else if (intent.card.kind === 'chargeField') {
-                g.moveTo(p.x, p.y);
-                g.lineTo(p.x + intent.direction.x * this.scaled(34), p.y + intent.direction.y * this.scaled(34));
+                g.circle(p.x, p.y, (intent.card.values.radiusM || 2) * this.pxPerM);
                 g.stroke();
             }
         }
@@ -2082,10 +2245,15 @@ export class MechanicsBrawlGame extends Component {
             const dir = this.angleToVector(draft.angleDeg);
             g.strokeColor = new Color(255, 226, 126, 210);
             g.lineWidth = this.strokeWidth(3);
-            g.circle(p.x, p.y, (draft.card.values.radiusM || 2) * this.pxPerM);
-            g.moveTo(p.x, p.y);
-            g.lineTo(p.x + dir.x * this.scaled(72), p.y + dir.y * this.scaled(72));
-            g.stroke();
+            if (draft.card.kind === 'windField') {
+                this.drawWindRect(g, draft.positionM, dir, draft.card.values.lengthM || 4, draft.card.values.widthM || 2, new Color(255, 226, 126, 18), new Color(255, 226, 126, 160));
+                g.moveTo(p.x, p.y);
+                g.lineTo(p.x + dir.x * this.scaled(72), p.y + dir.y * this.scaled(72));
+                g.stroke();
+            } else {
+                g.circle(p.x, p.y, (draft.card.values.radiusM || 2) * this.pxPerM);
+                g.stroke();
+            }
         }
 
         if (this.draggingCard && this.selectedCard >= 0 && this.inArenaPx(this.aimPoint)) {
@@ -2093,9 +2261,15 @@ export class MechanicsBrawlGame extends Component {
             const p = this.aimPoint;
             g.strokeColor = new Color(card.color.r, card.color.g, card.color.b, 160);
             g.lineWidth = this.strokeWidth(2);
-            const radiusM = card.values.radiusM || 0.35;
-            g.circle(p.x, p.y, radiusM * this.pxPerM);
-            g.stroke();
+            if (card.kind === 'windField') {
+                const actor = this.fighters[this.currentPlayer];
+                const dir = this.directionBetween(actor.posM, this.pxToWorld(p));
+                this.drawWindRect(g, this.pxToWorld(p), dir, card.values.lengthM || 4, card.values.widthM || 2, new Color(card.color.r, card.color.g, card.color.b, 18), new Color(card.color.r, card.color.g, card.color.b, 150));
+            } else {
+                const radiusM = card.values.radiusM || 0.35;
+                g.circle(p.x, p.y, radiusM * this.pxPerM);
+                g.stroke();
+            }
         }
     }
 
@@ -2216,14 +2390,22 @@ export class MechanicsBrawlGame extends Component {
         g.stroke();
 
         const dir = this.angleToVector(draft.angleDeg);
-        g.strokeColor = new Color(255, 226, 126, 255);
-        g.lineWidth = this.strokeWidth(4);
-        g.moveTo(center.x, center.y);
-        g.lineTo(center.x + dir.x * this.scaled(54), center.y + dir.y * this.scaled(54));
-        g.stroke();
-        g.fillColor = new Color(255, 226, 126, 255);
-        g.circle(center.x + dir.x * this.scaled(54), center.y + dir.y * this.scaled(54), this.scaled(6));
-        g.fill();
+        if (this.fieldConfigUsesDirection(draft.card)) {
+            g.strokeColor = new Color(255, 226, 126, 255);
+            g.lineWidth = this.strokeWidth(4);
+            g.moveTo(center.x, center.y);
+            g.lineTo(center.x + dir.x * this.scaled(54), center.y + dir.y * this.scaled(54));
+            g.stroke();
+            g.fillColor = new Color(255, 226, 126, 255);
+            g.circle(center.x + dir.x * this.scaled(54), center.y + dir.y * this.scaled(54), this.scaled(6));
+            g.fill();
+        } else {
+            g.strokeColor = draft.chargeSign > 0 ? new Color(255, 224, 102, 255) : new Color(145, 196, 255, 255);
+            g.lineWidth = this.strokeWidth(4);
+            g.circle(center.x, center.y, this.scaled(32));
+            g.stroke();
+            this.drawPlusMinus(g, center.x, center.y, draft.chargeSign > 0);
+        }
 
         g.fillColor = new Color(31, 42, 58, 255);
         g.rect(this.scaled(50), this.scaled(-6), this.scaled(136), this.scaled(42));
@@ -2233,8 +2415,10 @@ export class MechanicsBrawlGame extends Component {
         g.rect(this.scaled(50), this.scaled(-6), this.scaled(136), this.scaled(42));
         g.stroke();
 
-        this.drawButton(g, this.configAngleMinusRect(), new Color(50, 60, 76, 255), true);
-        this.drawButton(g, this.configAnglePlusRect(), new Color(50, 60, 76, 255), true);
+        if (this.fieldConfigUsesDirection(draft.card)) {
+            this.drawButton(g, this.configAngleMinusRect(), new Color(50, 60, 76, 255), true);
+            this.drawButton(g, this.configAnglePlusRect(), new Color(50, 60, 76, 255), true);
+        }
         this.drawButton(g, this.configValueMinusRect(), new Color(50, 60, 76, 255), true);
         this.drawButton(g, this.configValuePlusRect(), new Color(50, 60, 76, 255), true);
         this.drawButton(g, this.configCancelRect(), new Color(62, 54, 63, 255), true);
@@ -2399,12 +2583,16 @@ export class MechanicsBrawlGame extends Component {
             return;
         }
         this.labels.configTitle.string = `${draft.card.name} 参数面板`;
-        this.labels.configAngle.string = `方向 ${this.normalizeAngleDeg(draft.angleDeg).toFixed(0)} 度`;
-        this.labels.configValue.string = `${draft.valueN.toFixed(2)} N`;
+        const usesDirection = this.fieldConfigUsesDirection(draft.card);
+        this.labels.configAngle.string = usesDirection ? `方向 ${this.normalizeAngleDeg(draft.angleDeg).toFixed(0)} 度` : '';
+        this.labels.configAngle.node.active = usesDirection;
+        this.labels.configAngleMinus.node.active = usesDirection;
+        this.labels.configAnglePlus.node.active = usesDirection;
+        this.labels.configValue.string = `${draft.valueLabel} ${draft.value.toFixed(2)} ${draft.valueUnit}`;
         this.labels.configAngleMinus.string = '-15';
         this.labels.configAnglePlus.string = '+15';
-        this.labels.configValueMinus.string = `-${draft.stepN.toFixed(2)}`;
-        this.labels.configValuePlus.string = `+${draft.stepN.toFixed(2)}`;
+        this.labels.configValueMinus.string = `-${draft.stepValue.toFixed(2)}`;
+        this.labels.configValuePlus.string = `+${draft.stepValue.toFixed(2)}`;
         this.labels.configSign.string = draft.card.kind === 'chargeField' ? `极性 ${draft.chargeSign > 0 ? '+' : '-'}` : '';
         this.labels.configSign.node.active = draft.card.kind === 'chargeField';
         this.labels.configCancel.string = '取消';
@@ -2421,9 +2609,22 @@ export class MechanicsBrawlGame extends Component {
     }
 
     private sceneText() {
-        const fields = this.fields.map((field) => `${field.label} ${field.remainingSec}s ${field.maxForceN > 0 ? field.maxForceN.toFixed(2) + 'N' : ''}`).join('；') || '无场源';
+        const fields = this.fields.map((field) => this.fieldStatusText(field)).join('；') || '无场源';
         const pending = this.pendingIntents.map((intent) => intent.card.name).join('、') || '无计划';
         return `地图 ${this.arenaM.w.toFixed(1)} m x ${this.arenaM.h.toFixed(1)} m；场源：${fields}；墙体 ${this.walls.length}；本回合计划：${pending}`;
+    }
+
+    private fieldStatusText(field: FieldSource) {
+        if (field.type === 'wind') {
+            return `${field.label} ${field.remainingSec}s ${field.maxForceN.toFixed(2)}N ${field.lengthM.toFixed(1)}x${field.widthM.toFixed(1)}m`;
+        }
+        if (field.type === 'charge') {
+            return `${field.label} ${field.remainingSec}s q=${field.sourceChargeC.toFixed(2)}C dmin=${field.minDistanceM.toFixed(2)}m`;
+        }
+        if (field.type === 'damping') {
+            return `${field.label} ${field.remainingSec}s 阻尼${field.frictionDelta >= 0 ? '+' : ''}${field.frictionDelta.toFixed(2)}`;
+        }
+        return `${field.label} ${field.remainingSec}s 摩擦${field.frictionDelta >= 0 ? '+' : ''}${field.frictionDelta.toFixed(2)}`;
     }
 
     private playerText(index: number) {
@@ -2479,7 +2680,7 @@ export class MechanicsBrawlGame extends Component {
             `${card.name}｜${card.desc}`,
             `类型：${card.family} / ${this.targetText(card.targetMode)}｜生效：结束行动 + 骰子过场后`,
             `持续：${card.durationSec > 0 ? `${card.durationSec} s` : '本次结算前一次性'}｜${card.unitText}`,
-            `边界：质量 0.5-5.0 kg；电荷 -5 到 5 C；摩擦 0.02-0.80；单场源作用力不超过 3.0 N`,
+            `边界：质量 0.5-5.0 kg；电荷 -5 到 5 C；摩擦 0.02-0.80；风力不超过 3.0 N；库仑力由最小距离限制峰值`,
         ].join('\n');
     }
 
@@ -2494,9 +2695,9 @@ export class MechanicsBrawlGame extends Component {
     private intentSummary(card: CardDef, positionM: Vec2, direction: Vec2, wall?: WallBody) {
         switch (card.kind) {
             case 'windField':
-                return `将在 (${positionM.x.toFixed(2)}, ${positionM.y.toFixed(2)}) m 创建风场，方向 (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)})，${card.unitText}`;
+                return `将在 (${positionM.x.toFixed(2)}, ${positionM.y.toFixed(2)}) m 创建矩形风场，方向 (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)})，${card.unitText}`;
             case 'chargeField':
-                return `将在 (${positionM.x.toFixed(2)}, ${positionM.y.toFixed(2)}) m 创建固定电荷点，${card.unitText}`;
+                return `将在 (${positionM.x.toFixed(2)}, ${positionM.y.toFixed(2)}) m 创建固定电荷点，按 F=k*q1*q2/r^2 结算，${card.unitText}`;
             case 'frictionZone':
             case 'dampingZone':
                 return `将在 (${positionM.x.toFixed(2)}, ${positionM.y.toFixed(2)}) m 创建区域，${card.unitText}`;
@@ -2505,7 +2706,7 @@ export class MechanicsBrawlGame extends Component {
             case 'wallBreak':
                 return wall ? `将对墙体 #${wall.id} 造成 ${card.values.damage} 点耐久削减。` : '未选中墙体。';
             case 'fieldBoost':
-                return `将强化最近的己方场源，强度乘 ${card.values.multiplier.toFixed(1)}，最高 3.0 N。`;
+                return `将强化最近的己方场源，风力/源电荷/区域系数乘 ${card.values.multiplier.toFixed(1)}。`;
             default:
                 return `${this.targetText(card.targetMode)}：${card.unitText}`;
         }
