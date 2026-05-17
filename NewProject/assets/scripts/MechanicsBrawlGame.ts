@@ -151,6 +151,7 @@ export class MechanicsBrawlGame extends Component {
 
     private fighters: Fighter[] = [];
     private commonCards: CardDef[] = [];
+    private exclusiveCards: CardDef[][] = [[], []];
     private decks: CardDef[][] = [[], []];
     private hands: CardDef[][] = [[], []];
     private pendingIntents: CardIntent[] = [];
@@ -212,6 +213,9 @@ export class MechanicsBrawlGame extends Component {
     private readonly cardsDrawnPerTurn = 2;
     private readonly maxDiscardsPerTurn = 2;
     private readonly maxActionTurns = 30;
+    private readonly deckSize = 50;
+    private readonly commonCardsPerDeck = 30;
+    private readonly exclusiveCardsPerDeck = 20;
     private readonly wallUnitM = 0.4;
     private readonly fighterChargeRangeM = 5.8;
     private readonly fighterCoulombK = 0.36;
@@ -625,7 +629,6 @@ export class MechanicsBrawlGame extends Component {
         });
 
         const basic = [
-            c('basic_wind', '轻风标记', '轻风\n标记', 'basic', 'windField', 'arena', 3, new Color(118, 216, 255, 255), '放置矩形方向风场。拖放后设置风向和风力，范围按风向形成长方形。', '矩形 4.6 m x 1.8 m，风力 0.30-1.60 N，持续 3 s', { lengthM: 4.6, widthM: 1.8, forceN: 0.85, minForceN: 0.30, maxForceN: 1.60, forceStepN: 0.05 }),
             c('basic_charge', '静电标记', '静电\n标记', 'basic', 'chargeField', 'arena', 4, new Color(255, 214, 95, 255), '放置固定电荷点。受力严格按 F=k*q1*q2/r^2 计算，并用最小距离限制峰值。', '半径 3.4 m，源电荷 0.8-2.0 C，k=0.54，最小距离 0.95 m，持续 4 s', { radiusM: 3.4, sourceChargeC: 1.35, minSourceChargeC: 0.8, maxSourceChargeC: 2.0, sourceChargeStepC: 0.1, coulombK: 0.54, minDistanceM: 0.95 }),
             c('rough_zone', '粗糙地带', '粗糙\n地带', 'basic', 'frictionZone', 'arena', 4, new Color(166, 213, 122, 255), '放置摩擦区。角色经过时速度衰减更明显。', '半径 2.1 m，摩擦系数 +0.10，持续 4 s', { radiusM: 2.1, frictionDelta: 0.10 }),
             c('smooth_zone', '光滑地带', '光滑\n地带', 'basic', 'frictionZone', 'arena', 3, new Color(94, 229, 214, 255), '放置低摩擦冰面。视觉偏蓝并带雪花反馈。', '半径 2.2 m，摩擦系数 -0.06，持续 3 s', { radiusM: 2.2, frictionDelta: -0.06 }),
@@ -644,6 +647,7 @@ export class MechanicsBrawlGame extends Component {
         ];
 
         const newton = [
+            c('newton_wind', '牛顿风道', '牛顿\n风道', 'newton', 'windField', 'arena', 3, new Color(118, 216, 255, 255), '牛顿专属。放置矩形方向风场。拖放后设置风向和风力，范围按风向形成长方形。', '矩形 4.6 m x 1.8 m，风力 0.30-1.60 N，持续 3 s', { lengthM: 4.6, widthM: 1.8, forceN: 0.85, minForceN: 0.30, maxForceN: 1.60, forceStepN: 0.05 }),
             c('newton_inertia', '惯性锁定', '惯性\n锁定', 'newton', 'massBuff', 'self', 2, new Color(93, 164, 255, 255), '牛顿专属。按比例提高自身质量和抗扰动能力。', '自身质量 x1.35，持续 2 s', { massMultiplier: 1.35 }),
             c('newton_board', '牛顿砖列', '牛顿\n砖列', 'newton', 'wallCreate', 'arena', 5, new Color(111, 145, 210, 255), '牛顿专属。一次建造 2 个连续方块墙体单位。', '2 个 0.4 m 方块，耐久 2，持续 5 s', { blocks: 2, hp: 2 }),
             c('newton_break', '支点拆解', '支点\n拆解', 'newton', 'wallBreak', 'wall', 0, new Color(255, 150, 82, 255), '牛顿专属。按方块单位拆解墙体。', '墙体耐久 -2 格，结算前一次性', { damage: 2 }),
@@ -652,16 +656,14 @@ export class MechanicsBrawlGame extends Component {
 
         const maxwell = [
             c('maxwell_charge', '微型电荷点', '微型\n电荷', 'maxwell', 'chargeField', 'arena', 4, new Color(255, 118, 126, 255), '麦克斯韦专属。放置略强固定电荷点，按库仑公式结算，并用最小距离限制峰值。', '半径 3.7 m，源电荷 1.0-2.3 C，k=0.56，最小距离 0.90 m，持续 4 s', { radiusM: 3.7, sourceChargeC: 1.55, minSourceChargeC: 1.0, maxSourceChargeC: 2.3, sourceChargeStepC: 0.1, coulombK: 0.56, minDistanceM: 0.90 }),
-            c('maxwell_wind', '风矢量', '风\n矢量', 'maxwell', 'windField', 'arena', 3, new Color(103, 232, 218, 255), '麦克斯韦专属。拖放后通过转盘设置方向，通过数字框设置风力，形成稍长的矩形风道。', '矩形 5.2 m x 2.0 m，风力 0.40-1.90 N，持续 3 s', { lengthM: 5.2, widthM: 2.0, forceN: 1.08, minForceN: 0.40, maxForceN: 1.90, forceStepN: 0.05 }),
+            c('maxwell_focus', '库仑聚焦', '库仑\n聚焦', 'maxwell', 'chargeField', 'arena', 3, new Color(103, 232, 218, 255), '麦克斯韦专属。放置更紧凑但更强的固定电荷点，强调近距离库仑作用。', '半径 2.9 m，源电荷 1.2-2.6 C，k=0.62，最小距离 0.78 m，持续 3 s', { radiusM: 2.9, sourceChargeC: 1.75, minSourceChargeC: 1.2, maxSourceChargeC: 2.6, sourceChargeStepC: 0.1, coulombK: 0.62, minDistanceM: 0.78 }),
             c('maxwell_flip', '电荷翻转', '电荷\n翻转', 'maxwell', 'chargeFlip', 'opponent', 0, new Color(255, 143, 225, 255), '麦克斯韦专属。把对手电荷取反，改变电磁方向。', '对手电荷取反，结算前一次性，范围 -5 C 到 5 C', { chargeMultiplier: -1 }),
-            c('maxwell_smooth', '等势线', '等势\n线', 'maxwell', 'frictionZone', 'arena', 2, new Color(158, 184, 255, 255), '麦克斯韦专属。放置轻微低摩擦区，辅助场源组合。', '半径 2.3 m，摩擦系数 -0.03，持续 2 s', { radiusM: 2.3, frictionDelta: -0.03 }),
+            c('maxwell_discharge', '感应泄放', '感应\n泄放', 'maxwell', 'chargeAdjust', 'opponent', 0, new Color(158, 184, 255, 255), '麦克斯韦专属。强制削弱对手电荷强度，使其更难从库仑场中获得大位移。', '对手电荷 x0.40，结算前一次性，范围 -5 C 到 5 C', { chargeMultiplier: 0.40 }),
         ];
 
         this.commonCards = [...basic, ...math];
-        this.decks = [
-            [...basic, ...math, ...newton],
-            [...basic, ...math, ...maxwell],
-        ];
+        this.exclusiveCards = [newton, maxwell];
+        this.decks = [[], []];
     }
 
     private resetToStart() {
@@ -670,6 +672,7 @@ export class MechanicsBrawlGame extends Component {
         this.roundNumber = 1;
         this.nextRoundFirst = 0;
         this.currentPlayer = 0;
+        this.decks = [[], []];
         this.hands = [[], []];
         this.pendingIntents = [];
         this.fields = [];
@@ -713,6 +716,7 @@ export class MechanicsBrawlGame extends Component {
         this.cardInfoText = '';
         this.createInitialFighters();
         this.createInitialWalls();
+        this.resetDecksForRound();
         this.dealOpeningHands();
         this.startPlanning(`第 ${this.roundNumber} 局开始，${this.fighters[this.currentPlayer].name} 行动。`);
     }
@@ -763,7 +767,11 @@ export class MechanicsBrawlGame extends Component {
         this.hands = [[], []];
         for (let player = 0; player < 2; player++) {
             for (let i = 0; i < this.openingHandSize; i++) {
-                this.hands[player].push(this.drawCardForPlayer(player));
+                const card = this.drawCardForPlayer(player);
+                if (!card) {
+                    break;
+                }
+                this.hands[player].push(card);
             }
         }
     }
@@ -789,50 +797,56 @@ export class MechanicsBrawlGame extends Component {
 
     private drawCardForPlayer(playerIndex: number) {
         const deck = this.decks[playerIndex];
-        const hand = this.hands[playerIndex] || [];
-        let totalWeight = 0;
-        const weighted = deck.map((card) => {
-            let weight = this.cardDrawWeight(card);
-            if ((card.kind === 'wallCreate' || card.kind === 'wallBreak') && hand.some((inHand) => inHand.kind === card.kind)) {
-                weight *= 0.35;
-            }
-            totalWeight += weight;
-            return { card, weight };
-        });
-        let roll = Math.random() * totalWeight;
-        for (const item of weighted) {
-            roll -= item.weight;
-            if (roll <= 0) {
-                return item.card;
-            }
+        if (!deck || deck.length === 0) {
+            return null;
         }
-        return deck[deck.length - 1];
-    }
-
-    private cardDrawWeight(card: CardDef) {
-        if (card.kind === 'wallCreate' || card.kind === 'wallBreak') {
-            return 0.22;
-        }
-        if (card.kind === 'windField' || card.kind === 'chargeField') {
-            return 0.55;
-        }
-        if (card.kind === 'frictionZone' || card.kind === 'dampingZone') {
-            return 0.75;
-        }
-        if (card.family === 'math') {
-            return 0.90;
-        }
-        return 1.30;
+        return deck.pop() || null;
     }
 
     private drawTurnCards(playerIndex: number) {
         const hand = this.hands[playerIndex];
         let drawn = 0;
         while (drawn < this.cardsDrawnPerTurn && hand.length < this.maxHandSize) {
-            hand.push(this.drawCardForPlayer(playerIndex));
+            const card = this.drawCardForPlayer(playerIndex);
+            if (!card) {
+                break;
+            }
+            hand.push(card);
             drawn += 1;
         }
         return drawn;
+    }
+
+    private resetDecksForRound() {
+        this.decks = [
+            this.shuffleCards(this.buildDeckForPlayer(0)),
+            this.shuffleCards(this.buildDeckForPlayer(1)),
+        ];
+    }
+
+    private buildDeckForPlayer(playerIndex: number) {
+        const deck: CardDef[] = [];
+        const commons = this.commonCards;
+        const exclusives = this.exclusiveCards[playerIndex] || [];
+
+        for (let i = 0; i < this.commonCardsPerDeck; i++) {
+            deck.push(commons[i % commons.length]);
+        }
+        for (let i = 0; i < this.exclusiveCardsPerDeck; i++) {
+            deck.push(exclusives[i % exclusives.length]);
+        }
+        return deck.slice(0, this.deckSize);
+    }
+
+    private shuffleCards(cards: CardDef[]) {
+        const shuffled = [...cards];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const temp = shuffled[i];
+            shuffled[i] = shuffled[j];
+            shuffled[j] = temp;
+        }
+        return shuffled;
     }
 
     private discardSelectedCard() {
@@ -2635,8 +2649,9 @@ export class MechanicsBrawlGame extends Component {
         const force = this.lastForces[index];
         const forceMag = Math.hypot(force.x, force.y);
         const handCount = this.hands[index]?.length || 0;
+        const deckCount = this.decks[index]?.length || 0;
         const edge = this.boundaryDistances(index);
-        return `${f.name}  局分 ${this.roundWins[index]}  手牌 ${handCount}/${this.maxHandSize}\n` +
+        return `${f.name}  局分 ${this.roundWins[index]}  手牌 ${handCount}/${this.maxHandSize}  牌库 ${deckCount}/${this.deckSize}\n` +
             `位置 (${f.posM.x.toFixed(2)}, ${f.posM.y.toFixed(2)}) m  速度 ${speed.toFixed(2)} m/s\n` +
             `质量 ${stats.massKg.toFixed(2)} kg  摩擦 ${stats.friction.toFixed(2)}  电荷 ${stats.chargeC.toFixed(2)} C\n` +
             `合力 ${forceMag.toFixed(2)} N  动量 ${momentum.toFixed(2)} kg·m/s\n` +
